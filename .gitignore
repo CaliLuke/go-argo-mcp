@@ -1,0 +1,8 @@
+/go-argo-mcp
+/dist/
+/coverage.out
+/mcp-audit.log
+/.env
+/.idea/
+/.vscode/
+.DS_Store

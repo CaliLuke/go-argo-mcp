@@ -1,0 +1,49 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version: "1.26.1"
+          cache: true
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: false
+      - name: Install quality tools
+        run: |
+          go install github.com/CaliLuke/loom/cmd/loom@v1.7.0
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+          go install github.com/mibk/dupl@v1.1.0
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          go install golang.org/x/tools/cmd/deadcode@v0.48.0
+          go install golang.org/x/tools/cmd/goimports@v0.48.0
+          uv tool install prek==0.2.2
+      - name: Verify generated code
+        run: |
+          loom gen github.com/CaliLuke/go-argo-mcp/design
+          git diff --exit-code
+      - name: Run quality gates
+        run: |
+          actionlint
+          prek run --all-files
+      - name: Release binaries and Homebrew formula
+        uses: goreleaser/goreleaser-action@v7.2.3
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}

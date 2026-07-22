@@ -1,0 +1,71 @@
+version: 2
+
+project_name: go-argo-mcp
+
+builds:
+  - id: go-argo-mcp
+    main: ./cmd/go-argo-mcp
+    binary: go-argo-mcp
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: go-argo-mcp
+    ids:
+      - go-argo-mcp
+    formats:
+      - tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else }}{{ .Arch }}{{ end }}
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+brews:
+  - name: go-argo-mcp
+    ids:
+      - go-argo-mcp
+    repository:
+      owner: CaliLuke
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    homepage: https://github.com/CaliLuke/go-argo-mcp
+    description: Lightweight Go MCP server for Argo Workflows
+    license: Apache-2.0
+    install: |
+      bin.install "go-argo-mcp"
+    test: |
+      system bin/"go-argo-mcp", "--version"
+    caveats: |
+      go-argo-mcp exposes Streamable HTTP at http://127.0.0.1:8080/rpc.
+      Set ARGO_BASE_URL and optional ARGO_NAMESPACE before starting it.

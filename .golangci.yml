@@ -1,0 +1,52 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - misspell
+    - nilerr
+    - revive
+    - rowserrcheck
+    - sqlclosecheck
+    - unconvert
+    - unparam
+  settings:
+    errcheck:
+      check-type-assertions: true
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+  exclusions:
+    generated: lax
+    paths:
+      - gen/
+    rules:
+      - path: ^design/
+        linters: [staticcheck]
+        text: "ST1001"
+      - path: _test\.go
+        linters: [errcheck, unparam, unused]
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - gen/
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/CaliLuke/go-argo-mcp

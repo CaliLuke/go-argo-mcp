@@ -1,4 +1,6 @@
-.PHONY: build check generate release-snapshot run test
+.PHONY: build check formula-snapshot generate release-snapshot run test
+
+FORMULA_VERSION ?= 0.0.0
 
 generate:
 	loom gen github.com/CaliLuke/go-argo-mcp/design
@@ -17,3 +19,9 @@ run:
 
 release-snapshot:
 	goreleaser release --snapshot --clean
+
+formula-snapshot: release-snapshot
+	go run ./cmd/render-homebrew-formula \
+		-version "$(FORMULA_VERSION)" \
+		-checksums dist/checksums.txt \
+		-output dist/homebrew/Formula/go-argo-mcp.rb

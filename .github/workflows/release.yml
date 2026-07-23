@@ -38,7 +38,7 @@ jobs:
         run: |
           actionlint
           prek run --all-files
-      - name: Release binaries and Homebrew formula
+      - name: Release binaries
         uses: goreleaser/goreleaser-action@v7.2.3
         with:
           distribution: goreleaser
@@ -46,4 +46,26 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+      - name: Publish Homebrew formula
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+        run: |
+          formula="$RUNNER_TEMP/go-argo-mcp.rb"
+          go run ./cmd/render-homebrew-formula \
+            -version "${GITHUB_REF_NAME#v}" \
+            -checksums dist/checksums.txt \
+            -output "$formula"
+
+          endpoint="repos/CaliLuke/homebrew-tap/contents/Formula/go-argo-mcp.rb"
+          content="$(base64 -w 0 "$formula")"
+          current_sha="$(gh api "$endpoint" --jq .sha 2>/dev/null || true)"
+          if [[ -n "$current_sha" ]]; then
+            gh api --method PUT "$endpoint" \
+              --raw-field message="Update go-argo-mcp to ${GITHUB_REF_NAME}" \
+              --raw-field content="$content" \
+              --raw-field sha="$current_sha"
+          else
+            gh api --method PUT "$endpoint" \
+              --raw-field message="Add go-argo-mcp ${GITHUB_REF_NAME}" \
+              --raw-field content="$content"
+          fi

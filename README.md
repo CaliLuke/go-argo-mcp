@@ -140,10 +140,11 @@ Validate the native release artifacts locally:
 
 ```bash
 goreleaser check
-make release-snapshot
+make formula-snapshot
+brew style ./dist/homebrew/Formula/go-argo-mcp.rb
 ```
 
-Pushing a `v*` tag creates GitHub release archives for macOS, Linux, and Windows and updates `CaliLuke/homebrew-tap`. The repository must define a `HOMEBREW_TAP_GITHUB_TOKEN` Actions secret with write access to that tap.
+Pushing a `v*` tag creates GitHub release archives for macOS, Linux, and Windows. The release workflow then renders a checksummed multi-platform formula with `cmd/render-homebrew-formula` and commits it to `CaliLuke/homebrew-tap`. The repository must define a `HOMEBREW_TAP_GITHUB_TOKEN` Actions secret with write access to that tap.
 
 The test suite includes focused HTTP client tests, confirmation and namespace-policy tests, audit interception tests, and an end-to-end official MCP Go SDK test that advertises and invokes all 13 tools against a simulated Argo API.
 

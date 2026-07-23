@@ -8,5 +8,5 @@ This is a Go-only MCP server for Argo Workflows.
 - Keep application logic in `internal/` and entrypoints in `cmd/`.
 - Runtime configuration must use environment variables, not config files.
 - Preserve the read-only defaults and test mutation/destructive safeguards.
+- Generate Homebrew formulae with `cmd/render-homebrew-formula`; never hand-edit the tap output.
 - Run `prek run --all-files` before publishing changes.
-

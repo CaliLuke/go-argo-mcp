@@ -111,7 +111,9 @@ func DecodeInitializeResponse(decoder func(*http.Response) loomhttp.Decoder, res
 		res := NewInitializeResultOK(&body)
 		return res, nil
 	}
-} // BuildPingRequest instantiates a HTTP request object with method and path set
+}
+
+// BuildPingRequest instantiates a HTTP request object with method and path set
 // to call the "mcp_argo" service "ping" endpoint
 func (c *Client) BuildPingRequest(ctx context.Context, v any) (*http.Request, error) {
 	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: PingMcpArgoPath()}
@@ -176,7 +178,9 @@ func DecodePingResponse(decoder func(*http.Response) loomhttp.Decoder, restoreBo
 		res := NewPingResultOK(&body)
 		return res, nil
 	}
-} // BuildToolsListRequest instantiates a HTTP request object with method and
+}
+
+// BuildToolsListRequest instantiates a HTTP request object with method and
 // path set to call the "mcp_argo" service "tools/list" endpoint
 func (c *Client) BuildToolsListRequest(ctx context.Context, v any) (*http.Request, error) {
 	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: ToolsListMcpArgoPath()}
@@ -268,7 +272,9 @@ func DecodeToolsListResponse(decoder func(*http.Response) loomhttp.Decoder, rest
 		res := NewToolsListResultOK(&body)
 		return res, nil
 	}
-} // BuildToolsCallRequest instantiates a HTTP request object with method and
+}
+
+// BuildToolsCallRequest instantiates a HTTP request object with method and
 // path set to call the "mcp_argo" service "tools/call" endpoint
 func (c *Client) BuildToolsCallRequest(ctx context.Context, v any) (*http.Request, error) {
 	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: ToolsCallMcpArgoPath()}
@@ -360,7 +366,9 @@ func DecodeToolsCallResponse(decoder func(*http.Response) loomhttp.Decoder, rest
 		res := NewToolsCallResultOK(&body)
 		return res, nil
 	}
-} // BuildEventsStreamRequest instantiates a HTTP request object with method and
+}
+
+// BuildEventsStreamRequest instantiates a HTTP request object with method and
 // path set to call the "mcp_argo" service "events/stream" endpoint
 func (c *Client) BuildEventsStreamRequest(ctx context.Context, v any) (*http.Request, error) {
 	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: EventsStreamMcpArgoPath()}
@@ -425,7 +433,9 @@ func DecodeEventsStreamResponse(decoder func(*http.Response) loomhttp.Decoder, r
 		res := NewEventsStreamResultOK(&body)
 		return res, nil
 	}
-} // marshalMcpargoClientInfoToClientInfoRequestBodyRequestBodyRequestBodyRequestBody
+}
+
+// marshalMcpargoClientInfoToClientInfoRequestBodyRequestBodyRequestBodyRequestBody
 // builds a value of type
 // *ClientInfoRequestBodyRequestBodyRequestBodyRequestBody from a value of type
 // *mcpargo.ClientInfo.
@@ -688,7 +698,9 @@ func EncodePingRequest(encoder func(*http.Request) loomhttp.Encoder) func(*http.
 		}
 		return nil
 	}
-} // EncodeEventsStreamRequest returns an encoder for requests sent to the
+}
+
+// EncodeEventsStreamRequest returns an encoder for requests sent to the
 // mcp_argo service events/stream JSON-RPC method.
 func EncodeEventsStreamRequest(encoder func(*http.Request) loomhttp.Encoder) func(*http.Request, any) error {
 	return func(req *http.Request, v any) error {

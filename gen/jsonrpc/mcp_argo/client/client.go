@@ -79,7 +79,9 @@ func (c *Client) Initialize() loom.Endpoint {
 		}
 		return decodeResponse(resp)
 	}
-} // Ping returns an endpoint that makes JSON-RPC requests to the mcp_argo
+}
+
+// Ping returns an endpoint that makes JSON-RPC requests to the mcp_argo
 // service ping method.
 func (c *Client) Ping() loom.Endpoint {
 	var (
@@ -101,7 +103,9 @@ func (c *Client) Ping() loom.Endpoint {
 		}
 		return decodeResponse(resp)
 	}
-} // ToolsList returns an endpoint that makes JSON-RPC requests to the mcp_argo
+}
+
+// ToolsList returns an endpoint that makes JSON-RPC requests to the mcp_argo
 // service tools/list method.
 func (c *Client) ToolsList() loom.Endpoint {
 	var (
@@ -123,7 +127,9 @@ func (c *Client) ToolsList() loom.Endpoint {
 		}
 		return decodeResponse(resp)
 	}
-} // ToolsCall returns an endpoint that makes JSON-RPC requests to the mcp_argo
+}
+
+// ToolsCall returns an endpoint that makes JSON-RPC requests to the mcp_argo
 // service tools/call method.
 func (c *Client) ToolsCall() loom.Endpoint {
 	var (
@@ -163,7 +169,9 @@ func (c *Client) ToolsCall() loom.Endpoint {
 		}
 		return stream, nil
 	}
-} // EventsStream returns an endpoint that makes JSON-RPC requests to the
+}
+
+// EventsStream returns an endpoint that makes JSON-RPC requests to the
 // mcp_argo service events/stream method.
 func (c *Client) EventsStream() loom.Endpoint {
 	var (

@@ -111,7 +111,9 @@ func DecodeListWorkflowsResponse(decoder func(*http.Response) loomhttp.Decoder, 
 		res := NewListWorkflowsResultOK(&body)
 		return res, nil
 	}
-} // BuildGetWorkflowRequest instantiates a HTTP request object with method and
+}
+
+// BuildGetWorkflowRequest instantiates a HTTP request object with method and
 // path set to call the "argo" service "GetWorkflow" endpoint
 func (c *Client) BuildGetWorkflowRequest(ctx context.Context, v any) (*http.Request, error) {
 	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: GetWorkflowArgoPath()}
@@ -203,7 +205,9 @@ func DecodeGetWorkflowResponse(decoder func(*http.Response) loomhttp.Decoder, re
 		res := NewGetWorkflowWorkflowDetailResultOK(&body)
 		return res, nil
 	}
-} // BuildGetWorkflowLogsRequest instantiates a HTTP request object with method
+}
+
+// BuildGetWorkflowLogsRequest instantiates a HTTP request object with method
 // and path set to call the "argo" service "GetWorkflowLogs" endpoint
 func (c *Client) BuildGetWorkflowLogsRequest(ctx context.Context, v any) (*http.Request, error) {
 	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: GetWorkflowLogsArgoPath()}
@@ -295,7 +299,9 @@ func DecodeGetWorkflowLogsResponse(decoder func(*http.Response) loomhttp.Decoder
 		res := NewGetWorkflowLogsWorkflowLogsResultOK(&body)
 		return res, nil
 	}
-} // BuildTerminateWorkflowRequest instantiates a HTTP request object with method
+}
+
+// BuildTerminateWorkflowRequest instantiates a HTTP request object with method
 // and path set to call the "argo" service "TerminateWorkflow" endpoint
 func (c *Client) BuildTerminateWorkflowRequest(ctx context.Context, v any) (*http.Request, error) {
 	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: TerminateWorkflowArgoPath()}
@@ -387,7 +393,9 @@ func DecodeTerminateWorkflowResponse(decoder func(*http.Response) loomhttp.Decod
 		res := NewTerminateWorkflowActionResultOK(&body)
 		return res, nil
 	}
-} // BuildRetryWorkflowRequest instantiates a HTTP request object with method and
+}
+
+// BuildRetryWorkflowRequest instantiates a HTTP request object with method and
 // path set to call the "argo" service "RetryWorkflow" endpoint
 func (c *Client) BuildRetryWorkflowRequest(ctx context.Context, v any) (*http.Request, error) {
 	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: RetryWorkflowArgoPath()}
@@ -479,7 +487,9 @@ func DecodeRetryWorkflowResponse(decoder func(*http.Response) loomhttp.Decoder, 
 		res := NewRetryWorkflowActionResultOK(&body)
 		return res, nil
 	}
-} // BuildListCronWorkflowsRequest instantiates a HTTP request object with method
+}
+
+// BuildListCronWorkflowsRequest instantiates a HTTP request object with method
 // and path set to call the "argo" service "ListCronWorkflows" endpoint
 func (c *Client) BuildListCronWorkflowsRequest(ctx context.Context, v any) (*http.Request, error) {
 	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: ListCronWorkflowsArgoPath()}
@@ -571,7 +581,9 @@ func DecodeListCronWorkflowsResponse(decoder func(*http.Response) loomhttp.Decod
 		res := NewListCronWorkflowsResultOK(&body)
 		return res, nil
 	}
-} // BuildGetCronWorkflowRequest instantiates a HTTP request object with method
+}
+
+// BuildGetCronWorkflowRequest instantiates a HTTP request object with method
 // and path set to call the "argo" service "GetCronWorkflow" endpoint
 func (c *Client) BuildGetCronWorkflowRequest(ctx context.Context, v any) (*http.Request, error) {
 	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: GetCronWorkflowArgoPath()}
@@ -663,7 +675,9 @@ func DecodeGetCronWorkflowResponse(decoder func(*http.Response) loomhttp.Decoder
 		res := NewGetCronWorkflowCronWorkflowDetailResultOK(&body)
 		return res, nil
 	}
-} // BuildGetCronHistoryRequest instantiates a HTTP request object with method
+}
+
+// BuildGetCronHistoryRequest instantiates a HTTP request object with method
 // and path set to call the "argo" service "GetCronHistory" endpoint
 func (c *Client) BuildGetCronHistoryRequest(ctx context.Context, v any) (*http.Request, error) {
 	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: GetCronHistoryArgoPath()}
@@ -755,7 +769,9 @@ func DecodeGetCronHistoryResponse(decoder func(*http.Response) loomhttp.Decoder,
 		res := NewGetCronHistoryCronHistoryResultOK(&body)
 		return res, nil
 	}
-} // BuildToggleCronSuspensionRequest instantiates a HTTP request object with
+}
+
+// BuildToggleCronSuspensionRequest instantiates a HTTP request object with
 // method and path set to call the "argo" service "ToggleCronSuspension"
 // endpoint
 func (c *Client) BuildToggleCronSuspensionRequest(ctx context.Context, v any) (*http.Request, error) {
@@ -848,7 +864,9 @@ func DecodeToggleCronSuspensionResponse(decoder func(*http.Response) loomhttp.De
 		res := NewToggleCronSuspensionActionResultOK(&body)
 		return res, nil
 	}
-} // BuildListWorkflowTemplatesRequest instantiates a HTTP request object with
+}
+
+// BuildListWorkflowTemplatesRequest instantiates a HTTP request object with
 // method and path set to call the "argo" service "ListWorkflowTemplates"
 // endpoint
 func (c *Client) BuildListWorkflowTemplatesRequest(ctx context.Context, v any) (*http.Request, error) {
@@ -941,7 +959,9 @@ func DecodeListWorkflowTemplatesResponse(decoder func(*http.Response) loomhttp.D
 		res := NewListWorkflowTemplatesResultOK(&body)
 		return res, nil
 	}
-} // BuildGetWorkflowTemplateRequest instantiates a HTTP request object with
+}
+
+// BuildGetWorkflowTemplateRequest instantiates a HTTP request object with
 // method and path set to call the "argo" service "GetWorkflowTemplate" endpoint
 func (c *Client) BuildGetWorkflowTemplateRequest(ctx context.Context, v any) (*http.Request, error) {
 	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: GetWorkflowTemplateArgoPath()}
@@ -1033,7 +1053,9 @@ func DecodeGetWorkflowTemplateResponse(decoder func(*http.Response) loomhttp.Dec
 		res := NewGetWorkflowTemplateWorkflowTemplateDetailResultOK(&body)
 		return res, nil
 	}
-} // BuildListClusterWorkflowTemplatesRequest instantiates a HTTP request object
+}
+
+// BuildListClusterWorkflowTemplatesRequest instantiates a HTTP request object
 // with method and path set to call the "argo" service
 // "ListClusterWorkflowTemplates" endpoint
 func (c *Client) BuildListClusterWorkflowTemplatesRequest(ctx context.Context, v any) (*http.Request, error) {
@@ -1127,7 +1149,9 @@ func DecodeListClusterWorkflowTemplatesResponse(decoder func(*http.Response) loo
 		res := NewListClusterWorkflowTemplatesResultOK(&body)
 		return res, nil
 	}
-} // BuildGetClusterWorkflowTemplateRequest instantiates a HTTP request object
+}
+
+// BuildGetClusterWorkflowTemplateRequest instantiates a HTTP request object
 // with method and path set to call the "argo" service
 // "GetClusterWorkflowTemplate" endpoint
 func (c *Client) BuildGetClusterWorkflowTemplateRequest(ctx context.Context, v any) (*http.Request, error) {
@@ -1221,7 +1245,9 @@ func DecodeGetClusterWorkflowTemplateResponse(decoder func(*http.Response) loomh
 		res := NewGetClusterWorkflowTemplateClusterWorkflowTemplateDetailResultOK(&body)
 		return res, nil
 	}
-} // unmarshalWorkflowSummaryResponseBodyToArgoWorkflowSummary builds a value of
+}
+
+// unmarshalWorkflowSummaryResponseBodyToArgoWorkflowSummary builds a value of
 // type *argo.WorkflowSummary from a value of type *WorkflowSummaryResponseBody.
 func unmarshalWorkflowSummaryResponseBodyToArgoWorkflowSummary(v *WorkflowSummaryResponseBody) *argo.WorkflowSummary {
 	if v == nil {

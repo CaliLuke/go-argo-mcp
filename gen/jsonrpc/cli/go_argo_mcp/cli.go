@@ -24,7 +24,9 @@ import (
 //	command (subcommand1|subcommand2|...)
 func UsageCommands() []string {
 	return []string{"argo (list-workflows|get-workflow|get-workflow-logs|terminate-workflow|retry-workflow|list-cron-workflows|get-cron-workflow|get-cron-history|toggle-cron-suspension|list-workflow-templates|get-workflow-template|list-cluster-workflow-templates|get-cluster-workflow-template)"}
-} // UsageExamples produces an example of a valid invocation of the CLI tool.
+}
+
+// UsageExamples produces an example of a valid invocation of the CLI tool.
 func UsageExamples() string {
 	return os.Args[0] + " argo list-workflows --body '{\n      \"limit\": 1502936985936354876,\n      \"namespace\": \"Impedit dolor rerum labore illo in dolor.\",\n      \"status\": \"Succeeded\"\n   }'\\n"
 }
@@ -216,7 +218,9 @@ func ParseEndpoint(scheme string, host string, doer loomhttp.Doer, enc func(*htt
 		return nil, nil, err
 	}
 	return endpoint, data, nil
-} // argoUsage displays the usage of the argo command and its subcommands.
+}
+
+// argoUsage displays the usage of the argo command and its subcommands.
 func argoUsage() {
 	fmt.Fprintln(os.Stderr, "MCP service for Argo Workflows operations.")
 	fmt.Fprintf(os.Stderr, "Usage:\n    %s [globalflags] argo COMMAND [flags]\n\n", os.Args[0])

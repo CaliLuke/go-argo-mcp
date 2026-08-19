@@ -63,7 +63,9 @@ func (c *Client) ListWorkflows() loom.Endpoint {
 		}
 		return decodeResponse(resp)
 	}
-} // GetWorkflow returns an endpoint that makes JSON-RPC requests to the argo
+}
+
+// GetWorkflow returns an endpoint that makes JSON-RPC requests to the argo
 // service GetWorkflow method.
 func (c *Client) GetWorkflow() loom.Endpoint {
 	var (
@@ -85,7 +87,9 @@ func (c *Client) GetWorkflow() loom.Endpoint {
 		}
 		return decodeResponse(resp)
 	}
-} // GetWorkflowLogs returns an endpoint that makes JSON-RPC requests to the argo
+}
+
+// GetWorkflowLogs returns an endpoint that makes JSON-RPC requests to the argo
 // service GetWorkflowLogs method.
 func (c *Client) GetWorkflowLogs() loom.Endpoint {
 	var (
@@ -107,7 +111,9 @@ func (c *Client) GetWorkflowLogs() loom.Endpoint {
 		}
 		return decodeResponse(resp)
 	}
-} // TerminateWorkflow returns an endpoint that makes JSON-RPC requests to the
+}
+
+// TerminateWorkflow returns an endpoint that makes JSON-RPC requests to the
 // argo service TerminateWorkflow method.
 func (c *Client) TerminateWorkflow() loom.Endpoint {
 	var (
@@ -129,7 +135,9 @@ func (c *Client) TerminateWorkflow() loom.Endpoint {
 		}
 		return decodeResponse(resp)
 	}
-} // RetryWorkflow returns an endpoint that makes JSON-RPC requests to the argo
+}
+
+// RetryWorkflow returns an endpoint that makes JSON-RPC requests to the argo
 // service RetryWorkflow method.
 func (c *Client) RetryWorkflow() loom.Endpoint {
 	var (
@@ -151,7 +159,9 @@ func (c *Client) RetryWorkflow() loom.Endpoint {
 		}
 		return decodeResponse(resp)
 	}
-} // ListCronWorkflows returns an endpoint that makes JSON-RPC requests to the
+}
+
+// ListCronWorkflows returns an endpoint that makes JSON-RPC requests to the
 // argo service ListCronWorkflows method.
 func (c *Client) ListCronWorkflows() loom.Endpoint {
 	var (
@@ -173,7 +183,9 @@ func (c *Client) ListCronWorkflows() loom.Endpoint {
 		}
 		return decodeResponse(resp)
 	}
-} // GetCronWorkflow returns an endpoint that makes JSON-RPC requests to the argo
+}
+
+// GetCronWorkflow returns an endpoint that makes JSON-RPC requests to the argo
 // service GetCronWorkflow method.
 func (c *Client) GetCronWorkflow() loom.Endpoint {
 	var (
@@ -195,7 +207,9 @@ func (c *Client) GetCronWorkflow() loom.Endpoint {
 		}
 		return decodeResponse(resp)
 	}
-} // GetCronHistory returns an endpoint that makes JSON-RPC requests to the argo
+}
+
+// GetCronHistory returns an endpoint that makes JSON-RPC requests to the argo
 // service GetCronHistory method.
 func (c *Client) GetCronHistory() loom.Endpoint {
 	var (
@@ -217,7 +231,9 @@ func (c *Client) GetCronHistory() loom.Endpoint {
 		}
 		return decodeResponse(resp)
 	}
-} // ToggleCronSuspension returns an endpoint that makes JSON-RPC requests to the
+}
+
+// ToggleCronSuspension returns an endpoint that makes JSON-RPC requests to the
 // argo service ToggleCronSuspension method.
 func (c *Client) ToggleCronSuspension() loom.Endpoint {
 	var (
@@ -239,7 +255,9 @@ func (c *Client) ToggleCronSuspension() loom.Endpoint {
 		}
 		return decodeResponse(resp)
 	}
-} // ListWorkflowTemplates returns an endpoint that makes JSON-RPC requests to
+}
+
+// ListWorkflowTemplates returns an endpoint that makes JSON-RPC requests to
 // the argo service ListWorkflowTemplates method.
 func (c *Client) ListWorkflowTemplates() loom.Endpoint {
 	var (
@@ -261,7 +279,9 @@ func (c *Client) ListWorkflowTemplates() loom.Endpoint {
 		}
 		return decodeResponse(resp)
 	}
-} // GetWorkflowTemplate returns an endpoint that makes JSON-RPC requests to the
+}
+
+// GetWorkflowTemplate returns an endpoint that makes JSON-RPC requests to the
 // argo service GetWorkflowTemplate method.
 func (c *Client) GetWorkflowTemplate() loom.Endpoint {
 	var (
@@ -283,7 +303,9 @@ func (c *Client) GetWorkflowTemplate() loom.Endpoint {
 		}
 		return decodeResponse(resp)
 	}
-} // ListClusterWorkflowTemplates returns an endpoint that makes JSON-RPC
+}
+
+// ListClusterWorkflowTemplates returns an endpoint that makes JSON-RPC
 // requests to the argo service ListClusterWorkflowTemplates method.
 func (c *Client) ListClusterWorkflowTemplates() loom.Endpoint {
 	var (
@@ -305,7 +327,9 @@ func (c *Client) ListClusterWorkflowTemplates() loom.Endpoint {
 		}
 		return decodeResponse(resp)
 	}
-} // GetClusterWorkflowTemplate returns an endpoint that makes JSON-RPC requests
+}
+
+// GetClusterWorkflowTemplate returns an endpoint that makes JSON-RPC requests
 // to the argo service GetClusterWorkflowTemplate method.
 func (c *Client) GetClusterWorkflowTemplate() loom.Endpoint {
 	var (

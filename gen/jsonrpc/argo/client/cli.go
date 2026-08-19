@@ -45,7 +45,9 @@ func BuildListWorkflowsPayload(argoListWorkflowsBody string) (*argo.ListWorkflow
 	}
 
 	return v, nil
-} // BuildGetWorkflowPayload builds the payload for the argo GetWorkflow endpoint
+}
+
+// BuildGetWorkflowPayload builds the payload for the argo GetWorkflow endpoint
 // from CLI flags.
 func BuildGetWorkflowPayload(argoGetWorkflowBody string) (*argo.GetWorkflowPayload, error) {
 	var err error
@@ -67,7 +69,9 @@ func BuildGetWorkflowPayload(argoGetWorkflowBody string) (*argo.GetWorkflowPaylo
 	}
 
 	return v, nil
-} // BuildGetWorkflowLogsPayload builds the payload for the argo GetWorkflowLogs
+}
+
+// BuildGetWorkflowLogsPayload builds the payload for the argo GetWorkflowLogs
 // endpoint from CLI flags.
 func BuildGetWorkflowLogsPayload(argoGetWorkflowLogsBody string) (*argo.GetWorkflowLogsPayload, error) {
 	var err error
@@ -110,7 +114,9 @@ func BuildGetWorkflowLogsPayload(argoGetWorkflowLogsBody string) (*argo.GetWorkf
 	}
 
 	return v, nil
-} // BuildTerminateWorkflowPayload builds the payload for the argo
+}
+
+// BuildTerminateWorkflowPayload builds the payload for the argo
 // TerminateWorkflow endpoint from CLI flags.
 func BuildTerminateWorkflowPayload(argoTerminateWorkflowBody string) (*argo.TerminateWorkflowPayload, error) {
 	var err error
@@ -141,7 +147,9 @@ func BuildTerminateWorkflowPayload(argoTerminateWorkflowBody string) (*argo.Term
 	}
 
 	return v, nil
-} // BuildRetryWorkflowPayload builds the payload for the argo RetryWorkflow
+}
+
+// BuildRetryWorkflowPayload builds the payload for the argo RetryWorkflow
 // endpoint from CLI flags.
 func BuildRetryWorkflowPayload(argoRetryWorkflowBody string) (*argo.RetryWorkflowPayload, error) {
 	var err error
@@ -166,7 +174,9 @@ func BuildRetryWorkflowPayload(argoRetryWorkflowBody string) (*argo.RetryWorkflo
 	}
 
 	return v, nil
-} // BuildListCronWorkflowsPayload builds the payload for the argo
+}
+
+// BuildListCronWorkflowsPayload builds the payload for the argo
 // ListCronWorkflows endpoint from CLI flags.
 func BuildListCronWorkflowsPayload(argoListCronWorkflowsBody string) (*argo.ListCronWorkflowsPayload, error) {
 	var err error
@@ -186,7 +196,9 @@ func BuildListCronWorkflowsPayload(argoListCronWorkflowsBody string) (*argo.List
 	}
 
 	return v, nil
-} // BuildGetCronWorkflowPayload builds the payload for the argo GetCronWorkflow
+}
+
+// BuildGetCronWorkflowPayload builds the payload for the argo GetCronWorkflow
 // endpoint from CLI flags.
 func BuildGetCronWorkflowPayload(argoGetCronWorkflowBody string) (*argo.GetCronWorkflowPayload, error) {
 	var err error
@@ -208,7 +220,9 @@ func BuildGetCronWorkflowPayload(argoGetCronWorkflowBody string) (*argo.GetCronW
 	}
 
 	return v, nil
-} // BuildGetCronHistoryPayload builds the payload for the argo GetCronHistory
+}
+
+// BuildGetCronHistoryPayload builds the payload for the argo GetCronHistory
 // endpoint from CLI flags.
 func BuildGetCronHistoryPayload(argoGetCronHistoryBody string) (*argo.GetCronHistoryPayload, error) {
 	var err error
@@ -238,7 +252,9 @@ func BuildGetCronHistoryPayload(argoGetCronHistoryBody string) (*argo.GetCronHis
 	}
 
 	return v, nil
-} // BuildToggleCronSuspensionPayload builds the payload for the argo
+}
+
+// BuildToggleCronSuspensionPayload builds the payload for the argo
 // ToggleCronSuspension endpoint from CLI flags.
 func BuildToggleCronSuspensionPayload(argoToggleCronSuspensionBody string) (*argo.ToggleCronSuspensionPayload, error) {
 	var err error
@@ -264,7 +280,9 @@ func BuildToggleCronSuspensionPayload(argoToggleCronSuspensionBody string) (*arg
 	}
 
 	return v, nil
-} // BuildListWorkflowTemplatesPayload builds the payload for the argo
+}
+
+// BuildListWorkflowTemplatesPayload builds the payload for the argo
 // ListWorkflowTemplates endpoint from CLI flags.
 func BuildListWorkflowTemplatesPayload(argoListWorkflowTemplatesBody string) (*argo.ListWorkflowTemplatesPayload, error) {
 	var err error
@@ -284,7 +302,9 @@ func BuildListWorkflowTemplatesPayload(argoListWorkflowTemplatesBody string) (*a
 	}
 
 	return v, nil
-} // BuildGetWorkflowTemplatePayload builds the payload for the argo
+}
+
+// BuildGetWorkflowTemplatePayload builds the payload for the argo
 // GetWorkflowTemplate endpoint from CLI flags.
 func BuildGetWorkflowTemplatePayload(argoGetWorkflowTemplateBody string) (*argo.GetWorkflowTemplatePayload, error) {
 	var err error
@@ -306,7 +326,9 @@ func BuildGetWorkflowTemplatePayload(argoGetWorkflowTemplateBody string) (*argo.
 	}
 
 	return v, nil
-} // BuildListClusterWorkflowTemplatesPayload builds the payload for the argo
+}
+
+// BuildListClusterWorkflowTemplatesPayload builds the payload for the argo
 // ListClusterWorkflowTemplates endpoint from CLI flags.
 func BuildListClusterWorkflowTemplatesPayload(argoListClusterWorkflowTemplatesBody string) (*argo.ListClusterWorkflowTemplatesPayload, error) {
 	var err error
@@ -324,7 +346,9 @@ func BuildListClusterWorkflowTemplatesPayload(argoListClusterWorkflowTemplatesBo
 	}
 
 	return v, nil
-} // BuildGetClusterWorkflowTemplatePayload builds the payload for the argo
+}
+
+// BuildGetClusterWorkflowTemplatePayload builds the payload for the argo
 // GetClusterWorkflowTemplate endpoint from CLI flags.
 func BuildGetClusterWorkflowTemplatePayload(argoGetClusterWorkflowTemplateBody string) (*argo.GetClusterWorkflowTemplatePayload, error) {
 	var err error

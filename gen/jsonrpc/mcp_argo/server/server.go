@@ -151,9 +151,15 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 
 		var req jsonrpc.RawRequest
 		if err := s.decoder(r).Decode(&req); err != nil {
-			response := jsonrpc.MakeErrorResponse(nil, jsonrpc.ParseError, "Parse error", nil)
-			if encErr := s.encoder(r.Context(), w).Encode(response); encErr != nil {
-				s.errhandler(r.Context(), w, fmt.Errorf("failed to encode parse error response: %w", encErr))
+			loomtransport.RequestObserverFromContext(r.Context()).Fail(loomtransport.ReasonInvalidJSONRPCEnvelope)
+			// SSE is negotiated: stream the envelope decode error as a message event.
+			code, message, data := jsonrpcEnvelopeDecodeError(err)
+			response := jsonrpc.MakeErrorResponse(nil, code, message, data)
+			writer := loomhttp.NewSSEStreamWriter(w, r.Context(), loomtransport.TransportJSONRPC, s.streamWritePolicy)
+			if sendErr := writer.WriteEvent(r.Context(), func(w io.Writer) error {
+				return loomhttp.WriteJSONSSEEvent(w, loomhttp.SSEMessage{Type: "message"}, response)
+			}); sendErr != nil {
+				s.errhandler(r.Context(), w, fmt.Errorf("failed to send envelope decode error event: %w", sendErr))
 			}
 			return
 		}
@@ -523,7 +529,9 @@ func NewInitializeHandler(endpoint loom.Endpoint, mux loomhttp.Muxer, decoder fu
 		}
 		return nil
 	}
-} // NewPingHandler creates a JSON-RPC handler which calls the "mcp_argo" service
+}
+
+// NewPingHandler creates a JSON-RPC handler which calls the "mcp_argo" service
 // "ping" endpoint.
 func NewPingHandler(endpoint loom.Endpoint, mux loomhttp.Muxer, decoder func(*http.Request) loomhttp.Decoder, encoder func(context.Context, http.ResponseWriter) loomhttp.Encoder, errhandler func(context.Context, http.ResponseWriter, error)) func(ctx context.Context, r *http.Request, req *jsonrpc.RawRequest, w http.ResponseWriter) error {
 	return func(ctx context.Context, r *http.Request, req *jsonrpc.RawRequest, w http.ResponseWriter) error {
@@ -584,7 +592,9 @@ func NewPingHandler(endpoint loom.Endpoint, mux loomhttp.Muxer, decoder func(*ht
 		}
 		return nil
 	}
-} // NewToolsListHandler creates a JSON-RPC handler which calls the "mcp_argo"
+}
+
+// NewToolsListHandler creates a JSON-RPC handler which calls the "mcp_argo"
 // service "tools/list" endpoint.
 func NewToolsListHandler(endpoint loom.Endpoint, mux loomhttp.Muxer, decoder func(*http.Request) loomhttp.Decoder, encoder func(context.Context, http.ResponseWriter) loomhttp.Encoder, errhandler func(context.Context, http.ResponseWriter, error)) func(ctx context.Context, r *http.Request, req *jsonrpc.RawRequest, w http.ResponseWriter) error {
 	decodeParams := DecodeToolsListRequest(mux, decoder)
@@ -664,7 +674,9 @@ func NewToolsListHandler(endpoint loom.Endpoint, mux loomhttp.Muxer, decoder fun
 		}
 		return nil
 	}
-} // NewToolsCallHandler creates a JSON-RPC handler which calls the "mcp_argo"
+}
+
+// NewToolsCallHandler creates a JSON-RPC handler which calls the "mcp_argo"
 // service "tools/call" endpoint.
 func NewToolsCallHandler(endpoint loom.Endpoint, mux loomhttp.Muxer, decoder func(*http.Request) loomhttp.Decoder, encoder func(context.Context, http.ResponseWriter) loomhttp.Encoder, errhandler func(context.Context, http.ResponseWriter, error), streamWritePolicy loomhttp.StreamWritePolicy) func(ctx context.Context, r *http.Request, req *jsonrpc.RawRequest, w http.ResponseWriter) error {
 	decodeParams := DecodeToolsCallRequest(mux, decoder)
@@ -728,7 +740,9 @@ func NewToolsCallHandler(endpoint loom.Endpoint, mux loomhttp.Muxer, decoder fun
 		}
 		return nil
 	}
-} // NewEventsStreamHandler creates a JSON-RPC handler which calls the "mcp_argo"
+}
+
+// NewEventsStreamHandler creates a JSON-RPC handler which calls the "mcp_argo"
 // service "events/stream" endpoint.
 func NewEventsStreamHandler(endpoint loom.Endpoint, mux loomhttp.Muxer, decoder func(*http.Request) loomhttp.Decoder, encoder func(context.Context, http.ResponseWriter) loomhttp.Encoder, errhandler func(context.Context, http.ResponseWriter, error), streamWritePolicy loomhttp.StreamWritePolicy) func(ctx context.Context, r *http.Request, req *jsonrpc.RawRequest, w http.ResponseWriter) error {
 	return func(ctx context.Context, r *http.Request, req *jsonrpc.RawRequest, w http.ResponseWriter) error {
@@ -776,7 +790,9 @@ func NewEventsStreamHandler(endpoint loom.Endpoint, mux loomhttp.Muxer, decoder 
 		}
 		return nil
 	}
-} // encodeJSONRPCError creates and sends a JSON-RPC error response (handles nil ID gracefully)
+}
+
+// encodeJSONRPCError creates and sends a JSON-RPC error response (handles nil ID gracefully)
 func (s *Server) encodeJSONRPCError(ctx context.Context, w http.ResponseWriter, req *jsonrpc.RawRequest, code jsonrpc.Code, message string, data any) {
 	encodeJSONRPCError(ctx, w, req, code, message, data, s.encoder, s.errhandler)
 }
@@ -795,12 +811,23 @@ func encodeJSONRPCError(ctx context.Context, w http.ResponseWriter, req *jsonrpc
 	}
 }
 
-// jsonrpcErrorCodeForServiceError classifies framework validation errors as invalid params and all other service errors as internal errors.
+// jsonrpcEnvelopeDecodeError classifies errors raised while decoding a JSON-RPC envelope.
+func jsonrpcEnvelopeDecodeError(err error) (jsonrpc.Code, string, any) {
+	var serviceError *loom.ServiceError
+	if errors.As(err, &serviceError) && serviceError.Name == loom.RequestBodyTooLarge {
+		return jsonrpcErrorCodeForServiceError(serviceError), loom.ErrorSafeMessage(err), jsonrpc.NewErrorData(err)
+	}
+	return jsonrpc.ParseError, "Parse error", nil
+}
+
+// jsonrpcErrorCodeForServiceError classifies client-caused framework errors and maps all other service errors to internal errors.
 func jsonrpcErrorCodeForServiceError(err *loom.ServiceError) jsonrpc.Code {
 	if err == nil {
 		return jsonrpc.InternalError
 	}
 	switch err.Name {
+	case loom.RequestBodyTooLarge:
+		return jsonrpc.InvalidRequest
 	case loom.InvalidFieldType, loom.MissingField, loom.InvalidEnumValue, loom.InvalidFormat, loom.InvalidPattern, loom.InvalidRange, loom.InvalidLength, loom.DecodePayload, loom.MissingPayload:
 		return jsonrpc.InvalidParams
 	default:

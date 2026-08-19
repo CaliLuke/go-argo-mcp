@@ -151,9 +151,10 @@ func (s *Server) handleSingle(w http.ResponseWriter, r *http.Request) {
 	var req jsonrpc.RawRequest
 	if err := s.decoder(r).Decode(&req); err != nil {
 		loomtransport.RequestObserverFromContext(r.Context()).Fail(loomtransport.ReasonInvalidJSONRPCEnvelope)
-		response := jsonrpc.MakeErrorResponse(nil, jsonrpc.ParseError, "Parse error", nil)
+		code, message, data := jsonrpcEnvelopeDecodeError(err)
+		response := jsonrpc.MakeErrorResponse(nil, code, message, data)
 		if encErr := s.encoder(r.Context(), w).Encode(response); encErr != nil {
-			s.errhandler(r.Context(), w, fmt.Errorf("failed to encode parse error response: %w", encErr))
+			s.errhandler(r.Context(), w, fmt.Errorf("failed to encode envelope decode error response: %w", encErr))
 		}
 		return
 	}
@@ -165,9 +166,10 @@ func (s *Server) handleBatch(w http.ResponseWriter, r *http.Request) {
 	var rawReqs []json.RawMessage
 	if err := s.decoder(r).Decode(&rawReqs); err != nil {
 		loomtransport.RequestObserverFromContext(r.Context()).Fail(loomtransport.ReasonInvalidJSONRPCBatch)
-		response := jsonrpc.MakeErrorResponse(nil, jsonrpc.ParseError, "Parse error", nil)
+		code, message, data := jsonrpcEnvelopeDecodeError(err)
+		response := jsonrpc.MakeErrorResponse(nil, code, message, data)
 		if encErr := s.encoder(r.Context(), w).Encode(response); encErr != nil {
-			s.errhandler(r.Context(), w, fmt.Errorf("failed to encode parse error response: %w", encErr))
+			s.errhandler(r.Context(), w, fmt.Errorf("failed to encode envelope decode error response: %w", encErr))
 		}
 		return
 	}
@@ -398,7 +400,9 @@ func NewListWorkflowsHandler(endpoint loom.Endpoint, mux loomhttp.Muxer, decoder
 		}
 		return nil
 	}
-} // NewGetWorkflowHandler creates a JSON-RPC handler which calls the "argo"
+}
+
+// NewGetWorkflowHandler creates a JSON-RPC handler which calls the "argo"
 // service "GetWorkflow" endpoint.
 func NewGetWorkflowHandler(endpoint loom.Endpoint, mux loomhttp.Muxer, decoder func(*http.Request) loomhttp.Decoder, encoder func(context.Context, http.ResponseWriter) loomhttp.Encoder, errhandler func(context.Context, http.ResponseWriter, error)) func(ctx context.Context, r *http.Request, req *jsonrpc.RawRequest, w http.ResponseWriter) error {
 	decodeParams := DecodeGetWorkflowRequest(mux, decoder)
@@ -467,7 +471,9 @@ func NewGetWorkflowHandler(endpoint loom.Endpoint, mux loomhttp.Muxer, decoder f
 		}
 		return nil
 	}
-} // NewGetWorkflowLogsHandler creates a JSON-RPC handler which calls the "argo"
+}
+
+// NewGetWorkflowLogsHandler creates a JSON-RPC handler which calls the "argo"
 // service "GetWorkflowLogs" endpoint.
 func NewGetWorkflowLogsHandler(endpoint loom.Endpoint, mux loomhttp.Muxer, decoder func(*http.Request) loomhttp.Decoder, encoder func(context.Context, http.ResponseWriter) loomhttp.Encoder, errhandler func(context.Context, http.ResponseWriter, error)) func(ctx context.Context, r *http.Request, req *jsonrpc.RawRequest, w http.ResponseWriter) error {
 	decodeParams := DecodeGetWorkflowLogsRequest(mux, decoder)
@@ -536,7 +542,9 @@ func NewGetWorkflowLogsHandler(endpoint loom.Endpoint, mux loomhttp.Muxer, decod
 		}
 		return nil
 	}
-} // NewTerminateWorkflowHandler creates a JSON-RPC handler which calls the
+}
+
+// NewTerminateWorkflowHandler creates a JSON-RPC handler which calls the
 // "argo" service "TerminateWorkflow" endpoint.
 func NewTerminateWorkflowHandler(endpoint loom.Endpoint, mux loomhttp.Muxer, decoder func(*http.Request) loomhttp.Decoder, encoder func(context.Context, http.ResponseWriter) loomhttp.Encoder, errhandler func(context.Context, http.ResponseWriter, error)) func(ctx context.Context, r *http.Request, req *jsonrpc.RawRequest, w http.ResponseWriter) error {
 	decodeParams := DecodeTerminateWorkflowRequest(mux, decoder)
@@ -605,7 +613,9 @@ func NewTerminateWorkflowHandler(endpoint loom.Endpoint, mux loomhttp.Muxer, dec
 		}
 		return nil
 	}
-} // NewRetryWorkflowHandler creates a JSON-RPC handler which calls the "argo"
+}
+
+// NewRetryWorkflowHandler creates a JSON-RPC handler which calls the "argo"
 // service "RetryWorkflow" endpoint.
 func NewRetryWorkflowHandler(endpoint loom.Endpoint, mux loomhttp.Muxer, decoder func(*http.Request) loomhttp.Decoder, encoder func(context.Context, http.ResponseWriter) loomhttp.Encoder, errhandler func(context.Context, http.ResponseWriter, error)) func(ctx context.Context, r *http.Request, req *jsonrpc.RawRequest, w http.ResponseWriter) error {
 	decodeParams := DecodeRetryWorkflowRequest(mux, decoder)
@@ -674,7 +684,9 @@ func NewRetryWorkflowHandler(endpoint loom.Endpoint, mux loomhttp.Muxer, decoder
 		}
 		return nil
 	}
-} // NewListCronWorkflowsHandler creates a JSON-RPC handler which calls the
+}
+
+// NewListCronWorkflowsHandler creates a JSON-RPC handler which calls the
 // "argo" service "ListCronWorkflows" endpoint.
 func NewListCronWorkflowsHandler(endpoint loom.Endpoint, mux loomhttp.Muxer, decoder func(*http.Request) loomhttp.Decoder, encoder func(context.Context, http.ResponseWriter) loomhttp.Encoder, errhandler func(context.Context, http.ResponseWriter, error)) func(ctx context.Context, r *http.Request, req *jsonrpc.RawRequest, w http.ResponseWriter) error {
 	decodeParams := DecodeListCronWorkflowsRequest(mux, decoder)
@@ -743,7 +755,9 @@ func NewListCronWorkflowsHandler(endpoint loom.Endpoint, mux loomhttp.Muxer, dec
 		}
 		return nil
 	}
-} // NewGetCronWorkflowHandler creates a JSON-RPC handler which calls the "argo"
+}
+
+// NewGetCronWorkflowHandler creates a JSON-RPC handler which calls the "argo"
 // service "GetCronWorkflow" endpoint.
 func NewGetCronWorkflowHandler(endpoint loom.Endpoint, mux loomhttp.Muxer, decoder func(*http.Request) loomhttp.Decoder, encoder func(context.Context, http.ResponseWriter) loomhttp.Encoder, errhandler func(context.Context, http.ResponseWriter, error)) func(ctx context.Context, r *http.Request, req *jsonrpc.RawRequest, w http.ResponseWriter) error {
 	decodeParams := DecodeGetCronWorkflowRequest(mux, decoder)
@@ -812,7 +826,9 @@ func NewGetCronWorkflowHandler(endpoint loom.Endpoint, mux loomhttp.Muxer, decod
 		}
 		return nil
 	}
-} // NewGetCronHistoryHandler creates a JSON-RPC handler which calls the "argo"
+}
+
+// NewGetCronHistoryHandler creates a JSON-RPC handler which calls the "argo"
 // service "GetCronHistory" endpoint.
 func NewGetCronHistoryHandler(endpoint loom.Endpoint, mux loomhttp.Muxer, decoder func(*http.Request) loomhttp.Decoder, encoder func(context.Context, http.ResponseWriter) loomhttp.Encoder, errhandler func(context.Context, http.ResponseWriter, error)) func(ctx context.Context, r *http.Request, req *jsonrpc.RawRequest, w http.ResponseWriter) error {
 	decodeParams := DecodeGetCronHistoryRequest(mux, decoder)
@@ -881,7 +897,9 @@ func NewGetCronHistoryHandler(endpoint loom.Endpoint, mux loomhttp.Muxer, decode
 		}
 		return nil
 	}
-} // NewToggleCronSuspensionHandler creates a JSON-RPC handler which calls the
+}
+
+// NewToggleCronSuspensionHandler creates a JSON-RPC handler which calls the
 // "argo" service "ToggleCronSuspension" endpoint.
 func NewToggleCronSuspensionHandler(endpoint loom.Endpoint, mux loomhttp.Muxer, decoder func(*http.Request) loomhttp.Decoder, encoder func(context.Context, http.ResponseWriter) loomhttp.Encoder, errhandler func(context.Context, http.ResponseWriter, error)) func(ctx context.Context, r *http.Request, req *jsonrpc.RawRequest, w http.ResponseWriter) error {
 	decodeParams := DecodeToggleCronSuspensionRequest(mux, decoder)
@@ -950,7 +968,9 @@ func NewToggleCronSuspensionHandler(endpoint loom.Endpoint, mux loomhttp.Muxer, 
 		}
 		return nil
 	}
-} // NewListWorkflowTemplatesHandler creates a JSON-RPC handler which calls the
+}
+
+// NewListWorkflowTemplatesHandler creates a JSON-RPC handler which calls the
 // "argo" service "ListWorkflowTemplates" endpoint.
 func NewListWorkflowTemplatesHandler(endpoint loom.Endpoint, mux loomhttp.Muxer, decoder func(*http.Request) loomhttp.Decoder, encoder func(context.Context, http.ResponseWriter) loomhttp.Encoder, errhandler func(context.Context, http.ResponseWriter, error)) func(ctx context.Context, r *http.Request, req *jsonrpc.RawRequest, w http.ResponseWriter) error {
 	decodeParams := DecodeListWorkflowTemplatesRequest(mux, decoder)
@@ -1019,7 +1039,9 @@ func NewListWorkflowTemplatesHandler(endpoint loom.Endpoint, mux loomhttp.Muxer,
 		}
 		return nil
 	}
-} // NewGetWorkflowTemplateHandler creates a JSON-RPC handler which calls the
+}
+
+// NewGetWorkflowTemplateHandler creates a JSON-RPC handler which calls the
 // "argo" service "GetWorkflowTemplate" endpoint.
 func NewGetWorkflowTemplateHandler(endpoint loom.Endpoint, mux loomhttp.Muxer, decoder func(*http.Request) loomhttp.Decoder, encoder func(context.Context, http.ResponseWriter) loomhttp.Encoder, errhandler func(context.Context, http.ResponseWriter, error)) func(ctx context.Context, r *http.Request, req *jsonrpc.RawRequest, w http.ResponseWriter) error {
 	decodeParams := DecodeGetWorkflowTemplateRequest(mux, decoder)
@@ -1088,7 +1110,9 @@ func NewGetWorkflowTemplateHandler(endpoint loom.Endpoint, mux loomhttp.Muxer, d
 		}
 		return nil
 	}
-} // NewListClusterWorkflowTemplatesHandler creates a JSON-RPC handler which
+}
+
+// NewListClusterWorkflowTemplatesHandler creates a JSON-RPC handler which
 // calls the "argo" service "ListClusterWorkflowTemplates" endpoint.
 func NewListClusterWorkflowTemplatesHandler(endpoint loom.Endpoint, mux loomhttp.Muxer, decoder func(*http.Request) loomhttp.Decoder, encoder func(context.Context, http.ResponseWriter) loomhttp.Encoder, errhandler func(context.Context, http.ResponseWriter, error)) func(ctx context.Context, r *http.Request, req *jsonrpc.RawRequest, w http.ResponseWriter) error {
 	decodeParams := DecodeListClusterWorkflowTemplatesRequest(mux, decoder)
@@ -1157,7 +1181,9 @@ func NewListClusterWorkflowTemplatesHandler(endpoint loom.Endpoint, mux loomhttp
 		}
 		return nil
 	}
-} // NewGetClusterWorkflowTemplateHandler creates a JSON-RPC handler which calls
+}
+
+// NewGetClusterWorkflowTemplateHandler creates a JSON-RPC handler which calls
 // the "argo" service "GetClusterWorkflowTemplate" endpoint.
 func NewGetClusterWorkflowTemplateHandler(endpoint loom.Endpoint, mux loomhttp.Muxer, decoder func(*http.Request) loomhttp.Decoder, encoder func(context.Context, http.ResponseWriter) loomhttp.Encoder, errhandler func(context.Context, http.ResponseWriter, error)) func(ctx context.Context, r *http.Request, req *jsonrpc.RawRequest, w http.ResponseWriter) error {
 	decodeParams := DecodeGetClusterWorkflowTemplateRequest(mux, decoder)
@@ -1226,7 +1252,9 @@ func NewGetClusterWorkflowTemplateHandler(endpoint loom.Endpoint, mux loomhttp.M
 		}
 		return nil
 	}
-} // encodeJSONRPCError creates and sends a JSON-RPC error response (handles nil ID gracefully)
+}
+
+// encodeJSONRPCError creates and sends a JSON-RPC error response (handles nil ID gracefully)
 func (s *Server) encodeJSONRPCError(ctx context.Context, w http.ResponseWriter, req *jsonrpc.RawRequest, code jsonrpc.Code, message string, data any) {
 	encodeJSONRPCError(ctx, w, req, code, message, data, s.encoder, s.errhandler)
 }
@@ -1245,12 +1273,23 @@ func encodeJSONRPCError(ctx context.Context, w http.ResponseWriter, req *jsonrpc
 	}
 }
 
-// jsonrpcErrorCodeForServiceError classifies framework validation errors as invalid params and all other service errors as internal errors.
+// jsonrpcEnvelopeDecodeError classifies errors raised while decoding a JSON-RPC envelope.
+func jsonrpcEnvelopeDecodeError(err error) (jsonrpc.Code, string, any) {
+	var serviceError *loom.ServiceError
+	if errors.As(err, &serviceError) && serviceError.Name == loom.RequestBodyTooLarge {
+		return jsonrpcErrorCodeForServiceError(serviceError), loom.ErrorSafeMessage(err), jsonrpc.NewErrorData(err)
+	}
+	return jsonrpc.ParseError, "Parse error", nil
+}
+
+// jsonrpcErrorCodeForServiceError classifies client-caused framework errors and maps all other service errors to internal errors.
 func jsonrpcErrorCodeForServiceError(err *loom.ServiceError) jsonrpc.Code {
 	if err == nil {
 		return jsonrpc.InternalError
 	}
 	switch err.Name {
+	case loom.RequestBodyTooLarge:
+		return jsonrpc.InvalidRequest
 	case loom.InvalidFieldType, loom.MissingField, loom.InvalidEnumValue, loom.InvalidFormat, loom.InvalidPattern, loom.InvalidRange, loom.InvalidLength, loom.DecodePayload, loom.MissingPayload:
 		return jsonrpc.InvalidParams
 	default:

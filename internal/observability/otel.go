@@ -92,13 +92,9 @@ func (r *Runtime) Emit(ctx context.Context, loggerName, body string, attrs ...at
 	record := otellog.Record{}
 	record.SetTimestamp(time.Now())
 	record.SetSeverity(otellog.SeverityInfo)
-	record.SetBody(otellog.StringValue(body))
+	record.SetBody(attribute.StringValue(body))
 	if len(attrs) > 0 {
-		logAttrs := make([]otellog.KeyValue, 0, len(attrs))
-		for _, attr := range attrs {
-			logAttrs = append(logAttrs, otellog.KeyValueFromAttribute(attr))
-		}
-		record.AddAttributes(logAttrs...)
+		record.AddAttributes(attrs...)
 	}
 	otelglobal.Logger(loggerName).Emit(ctx, record)
 }

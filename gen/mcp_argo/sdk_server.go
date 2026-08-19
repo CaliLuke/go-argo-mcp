@@ -15,11 +15,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"sync"
 
 	argo "github.com/CaliLuke/go-argo-mcp/gen/argo"
-	mcpruntime "github.com/CaliLuke/loom-mcp/runtime/mcp"
-	sdkclient "github.com/CaliLuke/loom-mcp/runtime/mcp/sdkclient"
+	mcpruntime "github.com/CaliLuke/loom-mcp/v2/runtime/mcp"
+	sdkclient "github.com/CaliLuke/loom-mcp/v2/runtime/mcp/sdkclient"
+	loomhttp "github.com/CaliLuke/loom/http"
 	"github.com/CaliLuke/loom/observability/transport"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -31,9 +33,12 @@ type SDKServer struct {
 	Server  *mcpsdk.Server
 }
 type SDKServerOptions struct {
-	Adapter           *MCPAdapterOptions
-	RequestContext    func(context.Context, *http.Request) context.Context
+	Adapter        *MCPAdapterOptions
+	RequestContext func(context.Context, *http.Request) context.Context
+	// RequestStateKey encrypts and authenticates multi-round-trip request state. It must contain exactly 32 bytes when a flow emits or consumes requestState.
+	RequestStateKey   []byte
 	TransportObserver transport.Observer
+	RuntimeCORS       *loomhttp.RuntimeCORSPolicy
 	Server            *mcpsdk.ServerOptions
 	StreamableHTTP    *mcpsdk.StreamableHTTPOptions
 }
@@ -43,23 +48,21 @@ type sdkResponseObserver struct {
 	onSessionIssued func(string)
 	sessionOnce     sync.Once
 }
-type sdkToolCallCollector struct {
-	adapter   *MCPAdapter
-	parts     []*ToolsCallResult
-	final     *ToolsCallResult
-	streamErr error
-}
 
 func NewSDKServer(service argo.Service, opts *SDKServerOptions) (*SDKServer, error) {
 	var adapterOpts *MCPAdapterOptions
 	var requestContext func(context.Context, *http.Request) context.Context
+	var requestStateKey []byte
 	var transportObserver transport.Observer
+	var runtimeCORS *loomhttp.RuntimeCORSPolicy
 	var serverOpts *mcpsdk.ServerOptions
 	var streamableOpts *mcpsdk.StreamableHTTPOptions
 	if opts != nil {
 		adapterOpts = opts.Adapter
 		requestContext = opts.RequestContext
+		requestStateKey = opts.RequestStateKey
 		transportObserver = opts.TransportObserver
+		runtimeCORS = opts.RuntimeCORS
 		serverOpts = opts.Server
 		streamableOpts = opts.StreamableHTTP
 	}
@@ -67,6 +70,7 @@ func NewSDKServer(service argo.Service, opts *SDKServerOptions) (*SDKServer, err
 		return nil, fmt.Errorf("SDK ToolSearch compact mode does not support AllowDirectHiddenCalls")
 	}
 	adapter := NewMCPAdapter(service, adapterOpts)
+	adapter.requestStateKey = slices.Clone(requestStateKey)
 	serverOpts = sdkServerOptionsWithDefaults(serverOpts)
 	server := mcpsdk.NewServer(&mcpsdk.Implementation{
 		Name:    "go-argo-mcp",
@@ -84,6 +88,9 @@ func NewSDKServer(service argo.Service, opts *SDKServerOptions) (*SDKServer, err
 	handler := newSDKHandler(server, adapter, requestContext, streamableOpts)
 	if transportObserver != nil {
 		handler = transport.HTTPMiddleware(transportObserver)(handler)
+	}
+	if runtimeCORS != nil {
+		handler = sdkRuntimeCORSHandler(handler, *runtimeCORS)
 	}
 	return &SDKServer{
 		Adapter: adapter,
@@ -105,6 +112,14 @@ func sdkServerOptionsWithDefaults(opts *mcpsdk.ServerOptions) *mcpsdk.ServerOpti
 		opts.Capabilities = &capabilities
 	}
 	return opts
+}
+
+// ResourceUpdated notifies subscribed clients that a designed watchable resource changed.
+func (s *SDKServer) ResourceUpdated(ctx context.Context, uri string) error {
+	if s == nil || s.Server == nil {
+		return fmt.Errorf("MCP SDK server is not initialized")
+	}
+	return fmt.Errorf("unknown watchable MCP resource %q", uri)
 }
 func (w *sdkResponseObserver) captureSession() {
 	if w == nil || w.onSessionIssued == nil {
@@ -183,8 +198,18 @@ func sdkStreamableHTTPOptions(opts *mcpsdk.StreamableHTTPOptions) *mcpsdk.Stream
 	}
 	return &configured
 }
+func sdkRuntimeCORSHandler(next http.Handler, policy loomhttp.RuntimeCORSPolicy) http.Handler {
+	actual := policy.Handler(next.ServeHTTP)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodOptions {
+			policy.HandlePreflight(w, r, []string{http.MethodDelete, http.MethodGet, http.MethodPost})
+			return
+		}
+		actual(w, r)
+	})
+}
 func writeSDKSessionError(w http.ResponseWriter, err error) {
-	if errors.Is(err, mcpruntime.ErrInvalidSessionID) || errors.Is(err, mcpruntime.ErrSessionTerminated) {
+	if errors.Is(err, errInvalidSessionID) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
@@ -421,22 +446,32 @@ func sdkToolFromToolInfo(tool *ToolInfo) (*mcpsdk.Tool, error) {
 func (a *MCPAdapter) sdkToolHandler(requestContext func(context.Context, *http.Request) context.Context) mcpsdk.ToolHandler {
 	return func(ctx context.Context, req *mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 		payload := &ToolsCallPayload{}
+		var inputResponses mcpsdk.InputResponseMap
+		requestState := ""
 		if req != nil && req.Params != nil {
 			payload.Name = req.Params.Name
-			payload.Arguments = req.Params.Arguments
+			payload.Arguments = mcpJSONFromRaw(req.Params.Arguments)
+			inputResponses = req.Params.InputResponses
+			requestState = req.Params.RequestState
 		}
-		ctx = a.sdkRequestContext(ctx, req.GetSession(), req.GetExtra(), requestContext)
+		ctx = a.sdkRequestContext(ctx, req.GetSession(), req.GetExtra(), requestContext, inputResponses, requestState, "tools/call", payload)
 		if req != nil && req.Params != nil {
 			ctx = mcpruntime.WithProgressToken(ctx, req.Params.GetProgressToken())
 		}
-		stream := &sdkToolCallCollector{adapter: a}
-		if _, err := a.ToolsCall(ctx, payload, stream); err != nil {
+		result, err := a.ToolsCall(ctx, payload)
+		if err != nil {
+			if requests, state, ok := sdkclient.InputRequired(err); ok {
+				return &mcpsdk.CallToolResult{
+					InputRequests: requests,
+					RequestState:  state,
+				}, nil
+			}
 			return nil, err
 		}
-		return sdkCallToolResult(stream.result())
+		return sdkCallToolResult(result)
 	}
 }
-func (a *MCPAdapter) sdkRequestContext(ctx context.Context, session mcpsdk.Session, extra *mcpsdk.RequestExtra, requestContext func(context.Context, *http.Request) context.Context) context.Context {
+func (a *MCPAdapter) sdkRequestContext(ctx context.Context, session mcpsdk.Session, extra *mcpsdk.RequestExtra, requestContext func(context.Context, *http.Request) context.Context, inputResponses mcpsdk.InputResponseMap, requestState string, requestMethod string, requestParams any) context.Context {
 	if requestContext != nil {
 		ctx = requestContext(ctx, sdkSyntheticHTTPRequest(ctx, extra))
 	}
@@ -444,7 +479,7 @@ func (a *MCPAdapter) sdkRequestContext(ctx context.Context, session mcpsdk.Sessi
 		a.markInitializedSession("")
 		return ctx
 	}
-	ctx = sdkContextWithClientFeatures(ctx, session)
+	ctx = sdkContextWithClientFeatures(ctx, session, inputResponses, requestState, a.requestStateKey, requestMethod, requestParams)
 	sessionID := session.ID()
 	if sessionID == "" {
 		a.markInitializedSession("")
@@ -453,12 +488,18 @@ func (a *MCPAdapter) sdkRequestContext(ctx context.Context, session mcpsdk.Sessi
 	a.markInitializedSession(sessionID)
 	return mcpruntime.WithSessionID(ctx, sessionID)
 }
-func sdkContextWithClientFeatures(ctx context.Context, session mcpsdk.Session) context.Context {
+func sdkContextWithClientFeatures(ctx context.Context, session mcpsdk.Session, inputResponses mcpsdk.InputResponseMap, requestState string, requestStateKey []byte, requestMethod string, requestParams any) context.Context {
 	serverSession, ok := session.(*mcpsdk.ServerSession)
 	if !ok || serverSession == nil {
 		return ctx
 	}
-	return sdkclient.WithClientFeatures(ctx, serverSession)
+	return sdkclient.WithClientFeatures(ctx, serverSession, sdkclient.ClientFeaturesOptions{
+		InputResponses:  inputResponses,
+		RequestMethod:   requestMethod,
+		RequestParams:   requestParams,
+		RequestState:    requestState,
+		RequestStateKey: requestStateKey,
+	})
 }
 func sdkSyntheticHTTPRequest(ctx context.Context, extra *mcpsdk.RequestExtra) *http.Request {
 	req := &http.Request{
@@ -482,65 +523,6 @@ func sdkSyntheticHTTPRequest(ctx context.Context, extra *mcpsdk.RequestExtra) *h
 	}
 	return req
 }
-func (c *sdkToolCallCollector) Send(_ context.Context, event ToolsCallEvent) error {
-	res := event.(*ToolsCallResult)
-	c.parts = append(c.parts, res)
-	return nil
-}
-func (c *sdkToolCallCollector) SendAndClose(_ context.Context, event ToolsCallEvent) error {
-	res := event.(*ToolsCallResult)
-	c.final = res
-	return nil
-}
-func (c *sdkToolCallCollector) SendError(_ context.Context, _ any, err error) error {
-	c.streamErr = err
-	return nil
-}
-func (c *sdkToolCallCollector) result() *ToolsCallResult {
-	if c == nil {
-		return &ToolsCallResult{}
-	}
-	if c.streamErr != nil {
-		mapped := c.streamErr
-		if c.adapter != nil {
-			mapped = c.adapter.mapError(c.streamErr)
-		}
-		if mapped == nil {
-			mapped = c.streamErr
-		}
-		item := &ContentItem{
-			Text: stringPtr(formatToolErrorText(mapped)),
-			Type: "text",
-		}
-		return &ToolsCallResult{
-			Content: []*ContentItem{item},
-			IsError: boolPtr(true),
-		}
-	}
-	if len(c.parts) == 0 {
-		if c.final == nil {
-			return &ToolsCallResult{}
-		}
-		return c.final
-	}
-	merged := &ToolsCallResult{}
-	for _, part := range c.parts {
-		if part == nil {
-			continue
-		}
-		merged.Content = append(merged.Content, part.Content...)
-		if part.IsError != nil && *part.IsError {
-			merged.IsError = boolPtr(true)
-		}
-	}
-	if c.final != nil {
-		merged.Content = append(merged.Content, c.final.Content...)
-		if c.final.IsError != nil {
-			merged.IsError = c.final.IsError
-		}
-	}
-	return merged
-}
 func sdkCallToolResult(result *ToolsCallResult) (*mcpsdk.CallToolResult, error) {
 	if result == nil {
 		return &mcpsdk.CallToolResult{Content: []mcpsdk.Content{}}, nil
@@ -554,8 +536,12 @@ func sdkCallToolResult(result *ToolsCallResult) (*mcpsdk.CallToolResult, error) 
 		content = append(content, converted)
 	}
 	callResult := &mcpsdk.CallToolResult{Content: content}
-	if result.StructuredContent != nil {
-		callResult.StructuredContent = result.StructuredContent
+	structuredContent, err := mcpJSONRaw(result.StructuredContent)
+	if err != nil {
+		return nil, err
+	}
+	if len(structuredContent) > 0 {
+		callResult.StructuredContent = structuredContent
 	}
 	if result.IsError != nil {
 		callResult.IsError = *result.IsError

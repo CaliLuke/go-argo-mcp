@@ -55,15 +55,14 @@ func (l *Logger) Close() error {
 }
 
 func (l *Logger) Interceptor() mcpargo.ToolCallInterceptor {
-	return func(ctx context.Context, info mcpargo.ToolCallInterceptorInfo, payload *mcpargo.ToolsCallPayload, stream mcpargo.ToolsCallServerStream, next mcpargo.ToolCallHandler) (bool, error) {
+	return func(ctx context.Context, info mcpargo.ToolCallInterceptorInfo, payload *mcpargo.ToolsCallPayload, next mcpargo.ToolCallHandler) (*mcpargo.ToolsCallResult, error) {
 		start := time.Now()
-		capture := &captureStream{ToolsCallServerStream: stream}
-		toolError, err := next(ctx, payload, capture)
+		result, err := next(ctx, payload)
 		status := "SUCCESS"
-		if err != nil || toolError || capture.isError {
+		if err != nil || result != nil && result.IsError != nil && *result.IsError {
 			status = "ERROR"
 		}
-		summary := capture.summary
+		summary := resultSummary(result)
 		if summary == "" && err != nil {
 			summary = err.Error()
 		}
@@ -75,7 +74,7 @@ func (l *Logger) Interceptor() mcpargo.ToolCallInterceptor {
 			DurationMS: time.Since(start).Milliseconds(),
 			ExecutedAt: time.Now().UTC(),
 		})
-		return toolError, err
+		return result, err
 	}
 }
 
@@ -91,37 +90,9 @@ func (l *Logger) write(record Record) error {
 	return json.NewEncoder(l.file).Encode(record)
 }
 
-type captureStream struct {
-	mcpargo.ToolsCallServerStream
-	summary string
-	isError bool
-}
-
-func (s *captureStream) Send(ctx context.Context, event mcpargo.ToolsCallEvent) error {
-	s.capture(event)
-	return s.ToolsCallServerStream.Send(ctx, event)
-}
-
-func (s *captureStream) SendAndClose(ctx context.Context, event mcpargo.ToolsCallEvent) error {
-	s.capture(event)
-	return s.ToolsCallServerStream.SendAndClose(ctx, event)
-}
-
-func (s *captureStream) SendError(ctx context.Context, id any, err error) error {
-	s.isError = true
-	if err != nil {
-		s.summary = err.Error()
-	}
-	return s.ToolsCallServerStream.SendError(ctx, id, err)
-}
-
-func (s *captureStream) capture(event mcpargo.ToolsCallEvent) {
-	result, ok := event.(*mcpargo.ToolsCallResult)
-	if !ok || result == nil {
-		return
-	}
-	if result.IsError != nil && *result.IsError {
-		s.isError = true
+func resultSummary(result *mcpargo.ToolsCallResult) string {
+	if result == nil {
+		return ""
 	}
 	var parts []string
 	for _, item := range result.Content {
@@ -130,10 +101,17 @@ func (s *captureStream) capture(event mcpargo.ToolsCallEvent) {
 		}
 	}
 	if len(parts) > 0 {
-		s.summary = strings.Join(parts, "\n")
-	} else if len(result.StructuredContent) > 0 {
-		s.summary = string(result.StructuredContent)
+		return strings.Join(parts, "\n")
 	}
+	structured, ok := result.StructuredContent.Value()
+	if !ok {
+		return ""
+	}
+	encoded, err := json.Marshal(structured)
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
 }
 
 func redactArguments(raw json.RawMessage) json.RawMessage {

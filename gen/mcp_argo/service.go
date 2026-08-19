@@ -9,21 +9,14 @@ package mcpargo
 
 import (
 	"context"
-	"encoding/json"
+
+	loom "github.com/CaliLuke/loom/pkg"
 )
 
-// MCP protocol service for argo
+// MCP SDK adapter service for argo
 type Service interface {
-	// Initialize MCP session
-	Initialize(context.Context, *InitializePayload) (res *InitializeResult, err error)
-	// Ping the server
-	Ping(context.Context) (res *PingResult, err error)
-	// List available tools
-	ToolsList(context.Context, *ToolsListPayload) (res *ToolsListResult, err error)
 	// Call a tool
-	ToolsCall(context.Context, *ToolsCallPayload, ToolsCallServerStream) (res *ToolsCallResult, err error)
-	// Stream server-sent events (notifications)
-	EventsStream(context.Context, EventsStreamServerStream) (res *EventsStreamResult, err error)
+	ToolsCall(context.Context, *ToolsCallPayload) (res *ToolsCallResult, err error)
 }
 
 // APIName is the name of the API as defined in the design.
@@ -40,128 +33,7 @@ const ServiceName = "mcp_argo"
 // MethodNames lists the service method names as defined in the design. These
 // are the same values that are set in the endpoint request contexts under the
 // MethodKey key.
-var MethodNames = [5]string{"initialize", "ping", "tools/list", "tools/call", "events/stream"}
-
-// ToolsCallEvent is the interface implemented by the result type for the
-// tools/call method.
-type ToolsCallEvent interface {
-	isToolsCallEvent()
-}
-
-// isToolsCallEvent implements the ToolsCallEvent interface.
-func (*ToolsCallResult) isToolsCallEvent() {}
-
-// ToolsCallServerStream allows streaming instances of *ToolsCallResult over
-// SSE.
-type ToolsCallServerStream interface {
-	// Send streams JSON-RPC notifications with "ToolsCallResult". Notifications do
-	// not expect a response.
-	// IMPORTANT: Send only sends JSON-RPC notifications. Use SendAndClose to send
-	// a final response.
-	Send(context.Context, ToolsCallEvent) error
-	// SendAndClose sends a final response with "ToolsCallResult" and closes the
-	// stream.
-	// The result will be sent as a JSON-RPC response with the original request ID.
-	// If the result has an ID field populated, that ID will be used instead of the
-	// request ID.
-	SendAndClose(context.Context, ToolsCallEvent) error
-	// SendError sends a JSON-RPC error response.
-	SendError(context.Context, any, error) error
-}
-
-// ToolsCallClientStream allows streaming instances of *ToolsCallResult to the
-// client.
-type ToolsCallClientStream interface {
-	// Recv reads instances of "ToolsCallResult" from the stream.
-	Recv() (*ToolsCallResult, error)
-	// RecvWithContext reads instances of "ToolsCallResult" from the stream with
-	// context.
-	RecvWithContext(context.Context) (*ToolsCallResult, error)
-}
-
-// EventsStreamEvent is the interface implemented by the result type for the
-// events/stream method.
-type EventsStreamEvent interface {
-	isEventsStreamEvent()
-}
-
-// isEventsStreamEvent implements the EventsStreamEvent interface.
-func (*EventsStreamResult) isEventsStreamEvent() {}
-
-// EventsStreamServerStream allows streaming instances of *EventsStreamResult
-// over SSE.
-type EventsStreamServerStream interface {
-	// Send streams JSON-RPC notifications with "EventsStreamResult". Notifications
-	// do not expect a response.
-	// IMPORTANT: Send only sends JSON-RPC notifications. Use SendAndClose to send
-	// a final response.
-	Send(context.Context, EventsStreamEvent) error
-	// SendAndClose sends a final response with "EventsStreamResult" and closes the
-	// stream.
-	// The result will be sent as a JSON-RPC response with the original request ID.
-	// If the result has an ID field populated, that ID will be used instead of the
-	// request ID.
-	SendAndClose(context.Context, EventsStreamEvent) error
-	// SendError sends a JSON-RPC error response.
-	SendError(context.Context, any, error) error
-}
-
-// EventsStreamClientStream allows streaming instances of *EventsStreamResult
-// to the client.
-type EventsStreamClientStream interface {
-	// Recv reads instances of "EventsStreamResult" from the stream.
-	Recv() (*EventsStreamResult, error)
-	// RecvWithContext reads instances of "EventsStreamResult" from the stream with
-	// context.
-	RecvWithContext(context.Context) (*EventsStreamResult, error)
-}
-
-// Stream defines the interface for managing an SSE streaming connection in the
-// mcp_argo server. It allows sending notifications and final responses. This
-// interface is used by the service to interact with clients over SSE using
-// JSON-RPC.
-type Stream interface {
-	// Send sends an event (notification or response) to the client.
-	// For notifications, the result should not have an ID field.
-	// For responses, the result must have an ID field.
-	// Accepted types: *InitializeResult, *PingResult, *ToolsListResult,
-	// *ToolsCallResult, *EventsStreamResult
-	Send(context.Context, Event) error
-}
-
-// Event is the interface implemented by all result types that can be sent via
-// the mcp_argo Stream.
-type Event interface {
-	ismcpArgoEvent()
-}
-
-// ismcpArgoEvent implements the Event interface.
-func (*InitializeResult) ismcpArgoEvent() {}
-
-// ismcpArgoEvent implements the Event interface.
-func (*PingResult) ismcpArgoEvent() {}
-
-// ismcpArgoEvent implements the Event interface.
-func (*ToolsListResult) ismcpArgoEvent() {}
-
-// ismcpArgoEvent implements the Event interface.
-func (*ToolsCallResult) ismcpArgoEvent() {}
-
-// ismcpArgoEvent implements the Event interface.
-func (*EventsStreamResult) ismcpArgoEvent() {}
-
-type ClientInfo struct {
-	// Client name
-	Name string `json:"name"`
-	// Client version
-	Version string `json:"version"`
-	// Human-readable description of the client
-	Description *string `json:"description,omitempty"`
-	// Client website URL
-	WebsiteURL *string `json:"websiteUrl,omitempty"`
-	// Client icons
-	Icons []*Icon `json:"icons,omitempty"`
-}
+var MethodNames = [1]string{"tools/call"}
 
 type ContentItem struct {
 	// Content type
@@ -176,111 +48,13 @@ type ContentItem struct {
 	URI *string `json:"uri,omitempty"`
 }
 
-// EventsStreamResult is the result type of the mcp_argo service events/stream
-// method.
-type EventsStreamResult struct {
-	// Tool execution results
-	Content []*ContentItem `json:"content"`
-	// Whether the tool encountered an error
-	IsError *bool `json:"isError,omitempty"`
-}
-
-type Icon struct {
-	// Icon source URI
-	Src string `json:"src"`
-	// Icon MIME type
-	MimeType *string `json:"mimeType,omitempty"`
-	// Supported icon sizes
-	Sizes []string `json:"sizes,omitempty"`
-	// Optional icon theme preference
-	Theme *string `json:"theme,omitempty"`
-}
-
-// InitializePayload is the payload type of the mcp_argo service initialize
-// method.
-type InitializePayload struct {
-	// MCP protocol version
-	ProtocolVersion string `json:"protocolVersion"`
-	// Client information
-	ClientInfo *ClientInfo `json:"clientInfo"`
-}
-
-// InitializeResult is the result type of the mcp_argo service initialize
-// method.
-type InitializeResult struct {
-	// MCP protocol version
-	ProtocolVersion string `json:"protocolVersion"`
-	// Server capabilities
-	Capabilities *ServerCapabilities `json:"capabilities"`
-	// Server information
-	ServerInfo *ServerInfo `json:"serverInfo"`
-}
-
-// PingResult is the result type of the mcp_argo service ping method.
-type PingResult struct {
-	// Response to ping
-	Pong bool `json:"pong"`
-}
-
-// Prompts capability marker
-type PromptsCapability struct {
-}
-
-// Resources capability marker
-type ResourcesCapability struct {
-}
-
-type ServerCapabilities struct {
-	// Tool capabilities
-	Tools *ToolsCapability `json:"tools,omitempty"`
-	// Resource capabilities
-	Resources *ResourcesCapability `json:"resources,omitempty"`
-	// Prompt capabilities
-	Prompts *PromptsCapability `json:"prompts,omitempty"`
-	// Experimental server capabilities
-	Experimental any `json:"experimental,omitempty"`
-}
-
-type ServerInfo struct {
-	// Server name
-	Name string `json:"name"`
-	// Server version
-	Version string `json:"version"`
-	// Human-readable description of the server
-	Description *string `json:"description,omitempty"`
-	// Server website URL
-	WebsiteURL *string `json:"websiteUrl,omitempty"`
-	// Server icons
-	Icons []*Icon `json:"icons,omitempty"`
-}
-
-type ToolInfo struct {
-	// Tool name
-	Name string `json:"name"`
-	// Human-readable tool title
-	Title *string `json:"title,omitempty"`
-	// Tool description
-	Description *string `json:"description,omitempty"`
-	// JSON Schema for tool input
-	InputSchema any `json:"inputSchema,omitempty"`
-	// Optional JSON Schema for structured tool output
-	OutputSchema any `json:"outputSchema,omitempty"`
-	// Optional MCP tool annotations such as readOnlyHint, openWorldHint, or
-	// destructiveHint.
-	Annotations any `json:"annotations,omitempty"`
-	// Optional MCP tool metadata
-	Meta any `json:"_meta,omitempty"`
-	// Tool icons
-	Icons []*Icon `json:"icons,omitempty"`
-}
-
 // ToolsCallPayload is the payload type of the mcp_argo service tools/call
 // method.
 type ToolsCallPayload struct {
 	// Tool name
 	Name string `json:"name"`
 	// Tool arguments
-	Arguments json.RawMessage `json:"arguments,omitempty"`
+	Arguments loom.Nullable[any] `json:"arguments,omitzero"`
 }
 
 // ToolsCallResult is the result type of the mcp_argo service tools/call method.
@@ -288,24 +62,7 @@ type ToolsCallResult struct {
 	// Tool execution results
 	Content []*ContentItem `json:"content"`
 	// Optional structured result for machine consumers
-	StructuredContent json.RawMessage `json:"structuredContent,omitempty"`
+	StructuredContent loom.Nullable[any] `json:"structuredContent,omitzero"`
 	// Whether the tool encountered an error
 	IsError *bool `json:"isError,omitempty"`
-}
-
-// Tools capability marker
-type ToolsCapability struct {
-}
-
-// ToolsListPayload is the payload type of the mcp_argo service tools/list
-// method.
-type ToolsListPayload struct {
-	// Pagination cursor
-	Cursor *string `json:"cursor,omitempty"`
-}
-
-// ToolsListResult is the result type of the mcp_argo service tools/list method.
-type ToolsListResult struct {
-	// List of available tools
-	Tools []*ToolInfo `json:"tools"`
 }

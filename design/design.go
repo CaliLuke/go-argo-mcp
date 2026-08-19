@@ -1,7 +1,7 @@
 package design
 
 import (
-	. "github.com/CaliLuke/loom-mcp/dsl"
+	. "github.com/CaliLuke/loom-mcp/v2/dsl"
 	. "github.com/CaliLuke/loom/dsl"
 )
 
@@ -201,8 +201,7 @@ var _ = Service("argo", func() {
 		})
 	})
 
-	MCP("go-argo-mcp", "0.1.0", ProtocolVersion("2025-06-18"))
-	JSONRPC(func() { POST("/rpc") })
+	MCP("go-argo-mcp", "0.1.0")
 
 	Method("ListWorkflows", func() {
 		Description("List workflows in a namespace with an optional status filter.")

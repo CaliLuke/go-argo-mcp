@@ -14,9 +14,9 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/CaliLuke/loom-mcp/runtime/agent/planner"
-	agentsruntime "github.com/CaliLuke/loom-mcp/runtime/agent/runtime"
-	"github.com/CaliLuke/loom-mcp/runtime/agent/tools"
+	"github.com/CaliLuke/loom-mcp/v2/runtime/agent/planner"
+	agentsruntime "github.com/CaliLuke/loom-mcp/v2/runtime/agent/runtime"
+	"github.com/CaliLuke/loom-mcp/v2/runtime/agent/tools"
 )
 
 type localToolCallCollector struct {
@@ -64,19 +64,15 @@ func executeLocalProgressiveTool(ctx context.Context, adapter *MCPAdapter, call 
 	}
 	payload := &ToolsCallPayload{
 		Name:      toolName,
-		Arguments: append(json.RawMessage(nil), arguments...),
+		Arguments: mcpJSONFromRaw(append(json.RawMessage(nil), arguments...)),
 	}
-	collector := new(localToolCallCollector)
-	if _, err := adapter.executeLocalProgressiveTool(ctx, payload, collector); err != nil {
+	response, err := adapter.executeLocalProgressiveTool(ctx, payload)
+	if err != nil {
 		return agentsruntime.Executed(&planner.ToolResult{
 			Name:       call.Name,
 			ToolCallID: call.ToolCallID,
 			Error:      planner.ToolErrorFromError(err),
 		}), nil
-	}
-	response, err := collector.result()
-	if err != nil {
-		return nil, err
 	}
 	result, err := localPlannerToolResult(call, response)
 	if err != nil {
@@ -85,13 +81,25 @@ func executeLocalProgressiveTool(ctx context.Context, adapter *MCPAdapter, call 
 	return agentsruntime.Executed(result), nil
 }
 
-func (a *MCPAdapter) executeLocalProgressiveTool(ctx context.Context, payload *ToolsCallPayload, stream ToolsCallServerStream) (bool, error) {
-	info := a.toolCallInfo(payload)
-	handler := a.wrapToolCallHandler(info, a.localProgressiveToolHandler)
-	return handler(ctx, payload, stream)
+func (a *MCPAdapter) executeLocalProgressiveTool(ctx context.Context, payload *ToolsCallPayload) (*ToolsCallResult, error) {
+	arguments, err := mcpJSONRaw(payload.Arguments)
+	if err != nil {
+		return nil, err
+	}
+	info := a.toolCallInfo(payload, arguments)
+	handler := a.wrapToolCallHandler(info, a.collectLocalProgressiveTool)
+	return handler(ctx, payload)
 }
 
-func (a *MCPAdapter) localProgressiveToolHandler(ctx context.Context, payload *ToolsCallPayload, stream ToolsCallServerStream) (bool, error) {
+func (a *MCPAdapter) collectLocalProgressiveTool(ctx context.Context, payload *ToolsCallPayload) (*ToolsCallResult, error) {
+	collector := new(localToolCallCollector)
+	if _, err := a.localProgressiveToolHandler(ctx, payload, collector); err != nil {
+		return nil, err
+	}
+	return collector.result()
+}
+
+func (a *MCPAdapter) localProgressiveToolHandler(ctx context.Context, payload *ToolsCallPayload, stream toolCallStream) (bool, error) {
 	name := ""
 	if payload != nil {
 		name = payload.Name
@@ -163,9 +171,13 @@ func localPlannerToolResult(call *planner.ToolRequest, response *ToolsCallResult
 		result.Error = planner.NewToolError(text)
 		return result, nil
 	}
-	if len(response.StructuredContent) > 0 {
+	structuredContent, err := mcpJSONRaw(response.StructuredContent)
+	if err != nil {
+		return nil, err
+	}
+	if len(structuredContent) > 0 {
 		var structured any
-		if err := json.Unmarshal(response.StructuredContent, &structured); err != nil {
+		if err := json.Unmarshal(structuredContent, &structured); err != nil {
 			return nil, err
 		}
 		result.Result = structured
@@ -189,20 +201,12 @@ func localToolContentText(content []*ContentItem) string {
 	return strings.Join(parts, "\n")
 }
 
-func (c *localToolCallCollector) Send(_ context.Context, event ToolsCallEvent) error {
-	result, ok := event.(*ToolsCallResult)
-	if !ok {
-		return errors.New("unexpected local tools/call event type")
-	}
+func (c *localToolCallCollector) Send(_ context.Context, result *ToolsCallResult) error {
 	c.parts = append(c.parts, result)
 	return nil
 }
 
-func (c *localToolCallCollector) SendAndClose(_ context.Context, event ToolsCallEvent) error {
-	result, ok := event.(*ToolsCallResult)
-	if !ok {
-		return errors.New("unexpected local tools/call final event type")
-	}
+func (c *localToolCallCollector) SendAndClose(_ context.Context, result *ToolsCallResult) error {
 	c.final = result
 	return nil
 }
@@ -228,8 +232,8 @@ func (c *localToolCallCollector) result() (*ToolsCallResult, error) {
 			continue
 		}
 		merged.Content = append(merged.Content, part.Content...)
-		if len(part.StructuredContent) > 0 {
-			merged.StructuredContent = append(json.RawMessage(nil), part.StructuredContent...)
+		if part.StructuredContent.Present() {
+			merged.StructuredContent = part.StructuredContent
 		}
 		if part.IsError != nil {
 			value := *part.IsError

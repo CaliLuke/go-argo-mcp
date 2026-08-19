@@ -23,8 +23,7 @@ import (
 	"time"
 
 	argo "github.com/CaliLuke/go-argo-mcp/gen/argo"
-	mcpruntime "github.com/CaliLuke/loom-mcp/runtime/mcp"
-	goahttp "github.com/CaliLuke/loom/http"
+	mcpruntime "github.com/CaliLuke/loom-mcp/v2/runtime/mcp"
 	loom "github.com/CaliLuke/loom/pkg"
 	mcpauth "github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/sahilm/fuzzy"
@@ -47,8 +46,8 @@ type MCPAdapter struct {
 	callCounter         metric.Int64Counter
 	errorCounter        metric.Int64Counter
 	durationHistogram   metric.Float64Histogram
-	// Broadcaster for server-initiated events (notifications/resources)
-	broadcaster mcpruntime.Broadcaster
+	// requestStateKey encrypts and authenticates portable MCP multi-round-trip state.
+	requestStateKey []byte
 	// resourceNameToURI holds DSL-derived mapping for policy and lookups
 	resourceNameToURI map[string]string
 }
@@ -59,8 +58,20 @@ const (
 )
 
 var _ Service = (*MCPAdapter)(nil)
+var (
+	errInvalidSessionID               = errors.New("invalid session ID")
+	errSessionPrincipalBindingMissing = errors.New("session principal binding missing")
+	errSessionPrincipalMismatch       = errors.New("session user mismatch")
+)
 
 type (
+	toolCallStream interface {
+		Send(context.Context, *ToolsCallResult) error
+		SendAndClose(context.Context, *ToolsCallResult) error
+		SendError(context.Context, any, error) error
+	}
+	toolCallStreamHandler func(ctx context.Context, payload *ToolsCallPayload, stream toolCallStream) (bool, error)
+
 	// ToolCallInterceptorInfo describes a generated MCP tools/call invocation.
 	ToolCallInterceptorInfo interface {
 		loom.InterceptorInfo
@@ -69,10 +80,10 @@ type (
 	}
 
 	// ToolCallHandler is the generated MCP tool-call dispatcher.
-	ToolCallHandler func(ctx context.Context, payload *ToolsCallPayload, stream ToolsCallServerStream) (bool, error)
+	ToolCallHandler func(ctx context.Context, payload *ToolsCallPayload) (*ToolsCallResult, error)
 
 	// ToolCallInterceptor wraps generated MCP tool execution.
-	ToolCallInterceptor func(ctx context.Context, info ToolCallInterceptorInfo, payload *ToolsCallPayload, stream ToolsCallServerStream, next ToolCallHandler) (bool, error)
+	ToolCallInterceptor func(ctx context.Context, info ToolCallInterceptorInfo, payload *ToolsCallPayload, next ToolCallHandler) (*ToolsCallResult, error)
 )
 type toolCallInterceptorInfo struct {
 	service    string
@@ -159,77 +170,57 @@ type MCPAdapterOptions struct {
 	StructuredStreamJSON bool
 	// SessionPrincipal extracts a stable auth/session owner identity from ctx.
 	SessionPrincipal func(context.Context) string
-	// Pluggable broadcaster, else default channel broadcaster
-	Broadcaster     mcpruntime.Broadcaster
-	BroadcastBuffer int
-	// DropIfSlow controls whether slow subscribers drop events. Nil defaults to true.
-	DropIfSlow *bool
 }
 
 func NewMCPAdapter(service argo.Service, opts *MCPAdapterOptions) *MCPAdapter {
 	validateToolSearchOptions(opts)
-	// Broadcaster
-	var bc mcpruntime.Broadcaster
-	if opts != nil && opts.Broadcaster != nil {
-		bc = opts.Broadcaster
-	} else {
-		buf := 32
-		drop := true
-		if opts != nil {
-			if opts.BroadcastBuffer > 0 {
-				buf = opts.BroadcastBuffer
-			}
-			if opts.DropIfSlow != nil {
-				drop = *opts.DropIfSlow
-			}
-		}
-		bc = mcpruntime.NewChannelBroadcaster(buf, drop)
-	}
 	telemetryName := defaultMCPAdapterTelemetryName(opts)
 	tracer := defaultMCPAdapterTracer(opts, telemetryName)
 	callCounter, errorCounter, durationHistogram := defaultMCPAdapterMetrics(opts, telemetryName)
 	// Build name->URI map from generated resources
 	nameToURI := map[string]string{}
-	return &MCPAdapter{service: service, initializedSessions: make(map[string]time.Time), sessionPrincipals: make(map[string]string), opts: opts, tracer: tracer, callCounter: callCounter, errorCounter: errorCounter, durationHistogram: durationHistogram, broadcaster: bc, resourceNameToURI: nameToURI}
+	return &MCPAdapter{service: service, initializedSessions: make(map[string]time.Time), sessionPrincipals: make(map[string]string), opts: opts, tracer: tracer, callCounter: callCounter, errorCounter: errorCounter, durationHistogram: durationHistogram, resourceNameToURI: nameToURI}
 }
-
-// mcpProtocolVersion returns the design-configured protocol version.
-func (a *MCPAdapter) mcpProtocolVersion() string {
-	return DefaultProtocolVersion
+func mcpJSONRaw(value loom.Nullable[any]) (json.RawMessage, error) {
+	if !value.Present() {
+		return nil, nil
+	}
+	if value.IsNull() {
+		return json.RawMessage("null"), nil
+	}
+	actual, ok := value.Value()
+	if !ok {
+		return nil, errors.New("present MCP JSON value has no concrete value")
+	}
+	if raw, ok := actual.(json.RawMessage); ok {
+		return append(json.RawMessage(nil), raw...), nil
+	}
+	raw, err := json.Marshal(actual)
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(raw), nil
 }
-func (a *MCPAdapter) supportsProtocolVersion(requested string) bool {
-	for _, v := range SupportedProtocolVersions {
-		if v == requested {
-			return true
-		}
+func mcpJSONFromRaw(raw json.RawMessage) loom.Nullable[any] {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return loom.Nullable[any]{}
 	}
-	return false
+	if bytes.Equal(trimmed, []byte("null")) {
+		return loom.NullValue[any]()
+	}
+	copied := append(json.RawMessage(nil), raw...)
+	return loom.NullableValue[any](copied)
 }
-
-// negotiateProtocolVersion returns the requested version if supported, otherwise the server's latest.
-func (a *MCPAdapter) negotiateProtocolVersion(requested string) string {
-	if a.supportsProtocolVersion(requested) {
-		return requested
+func mcpJSONAny(value loom.Nullable[any]) any {
+	if value.IsNull() {
+		return nil
 	}
-	return a.mcpProtocolVersion()
-}
-func validMCPProtocolVersionDate(v string) bool {
-	if len(v) != 10 {
-		return false
+	actual, ok := value.Value()
+	if !ok {
+		return nil
 	}
-	for i := range v {
-		switch i {
-		case 4, 7:
-			if v[i] != '-' {
-				return false
-			}
-		default:
-			if v[i] < '0' || v[i] > '9' {
-				return false
-			}
-		}
-	}
-	return true
+	return actual
 }
 
 // parseQueryParamsToJSON converts URI query params into JSON.
@@ -337,16 +328,16 @@ func (a *MCPAdapter) assertSessionPrincipal(ctx context.Context, sessionID strin
 	expected := strings.TrimSpace(a.sessionPrincipals[sessionID])
 	a.mu.Unlock()
 	if !initialized {
-		return mcpruntime.ErrInvalidSessionID
+		return errInvalidSessionID
 	}
 	if expected == "" {
 		if principalRequired || actual != "" {
-			return mcpruntime.ErrSessionPrincipalBindingMissing
+			return errSessionPrincipalBindingMissing
 		}
 		return nil
 	}
 	if actual == "" || actual != expected {
-		return mcpruntime.ErrSessionPrincipalMismatch
+		return errSessionPrincipalMismatch
 	}
 	return nil
 }
@@ -372,7 +363,7 @@ func (a *MCPAdapter) mapError(err error) error {
 	}
 	return err
 }
-func (a *MCPAdapter) toolCallInfo(p *ToolsCallPayload) ToolCallInterceptorInfo {
+func (a *MCPAdapter) toolCallInfo(p *ToolsCallPayload, rawArgs json.RawMessage) ToolCallInterceptorInfo {
 	info := &toolCallInterceptorInfo{
 		method:     "tools/call",
 		rawPayload: p,
@@ -380,7 +371,7 @@ func (a *MCPAdapter) toolCallInfo(p *ToolsCallPayload) ToolCallInterceptorInfo {
 	}
 	if p != nil {
 		info.tool = p.Name
-		info.rawArgs = p.Arguments
+		info.rawArgs = rawArgs
 	}
 	return info
 }
@@ -395,8 +386,8 @@ func (a *MCPAdapter) wrapToolCallHandler(info ToolCallInterceptorInfo, next Tool
 			continue
 		}
 		currentNext := wrapped
-		wrapped = func(ctx context.Context, payload *ToolsCallPayload, stream ToolsCallServerStream) (bool, error) {
-			return interceptor(ctx, info, payload, stream, currentNext)
+		wrapped = func(ctx context.Context, payload *ToolsCallPayload) (*ToolsCallResult, error) {
+			return interceptor(ctx, info, payload, currentNext)
 		}
 	}
 	return wrapped
@@ -485,9 +476,12 @@ func buildContentItem(a *MCPAdapter, s string) *ContentItem {
 		Type: "text",
 	}
 }
-func (a *MCPAdapter) sendToolError(ctx context.Context, stream ToolsCallServerStream, toolName string, err error) error {
+func (a *MCPAdapter) sendToolError(ctx context.Context, stream toolCallStream, toolName string, err error) error {
 	if err == nil {
 		return nil
+	}
+	if mcpruntime.IsInputRequired(err) || mcpruntime.IsInvalidClientInput(err) {
+		return err
 	}
 	mapped := a.mapError(err)
 	if mapped == nil {
@@ -542,6 +536,9 @@ func formatToolErrorText(err error) string {
 	return fmt.Sprintf("[%s] %s\nRecovery: %s", code, message, recovery)
 }
 func (a *MCPAdapter) safeMCPError(err error, defaultCode string, fallbackMessage string) error {
+	if mcpruntime.IsInputRequired(err) {
+		return err
+	}
 	if err == nil {
 		return loom.WithErrorRemedy(loom.PermanentError(defaultCode, "%s", fallbackMessage), &loom.ErrorRemedy{
 			Code:        defaultCode,
@@ -615,141 +612,82 @@ func missingFieldFromMessage(message string) string {
 	return strings.TrimSpace(strings.TrimPrefix(message, prefix))
 }
 
-// Initialize handles the MCP initialize request.
-func (a *MCPAdapter) Initialize(ctx context.Context, p *InitializePayload) (res *InitializeResult, err error) {
-	ctx, span, start, attrs := a.startTelemetry(ctx, "initialize")
-	defer func() {
-		a.finishTelemetry(ctx, span, start, attrs, err, false)
-	}()
-	requestProtocol := ""
-	requestSessionID := mcpruntime.SessionIDFromContext(ctx)
-	if p != nil {
-		requestProtocol = p.ProtocolVersion
-	}
-	a.log(ctx, "request", map[string]any{
-		"method":           "initialize",
-		"protocol_version": requestProtocol,
-		"session_id":       requestSessionID,
-	})
-	if p == nil || p.ProtocolVersion == "" {
-		return nil, loom.PermanentError("invalid_params", "Missing protocolVersion")
-	}
-	negotiatedVersion := a.negotiateProtocolVersion(p.ProtocolVersion)
-	sessionID := requestSessionID
-	if sessionID == "" && mcpruntime.ResponseWriterFromContext(ctx) != nil {
-		sessionID = mcpruntime.EnsureSessionID(ctx)
-	}
-	a.mu.Lock()
-	now := time.Now()
-	if sessionID == "" {
-		if a.initialized {
-			a.mu.Unlock()
-			err = loom.PermanentError("invalid_params", "Already initialized")
-			a.log(ctx, "response", map[string]any{
-				"error":            err.Error(),
-				"method":           "initialize",
-				"protocol_version": p.ProtocolVersion,
-				"session_id":       sessionID,
-			})
-			return nil, err
-		}
-		a.initialized = true
-	} else {
-		if _, ok := a.initializedSessions[sessionID]; !ok {
-			a.pruneSessionsLocked(now, true)
-		}
-		if _, ok := a.initializedSessions[sessionID]; ok {
-			a.mu.Unlock()
-			err = loom.PermanentError("invalid_params", "Already initialized")
-			a.log(ctx, "response", map[string]any{
-				"error":            err.Error(),
-				"method":           "initialize",
-				"protocol_version": p.ProtocolVersion,
-				"session_id":       sessionID,
-			})
-			return nil, err
-		}
-		a.initializedSessions[sessionID] = now
-	}
-	a.mu.Unlock()
-	a.captureSessionPrincipal(ctx, sessionID)
-	serverInfo := &ServerInfo{Name: "go-argo-mcp", Version: "0.1.0", Description: stringPtr("MCP service for Argo Workflows operations.")}
-	capabilities := &ServerCapabilities{}
-	capabilities.Tools = &ToolsCapability{}
-	capabilities.Experimental = map[string]any{"loom-mcp": map[string]any{"events": map[string]any{
-		"method":        "events/stream",
-		"notifications": []string{},
-		"stream":        true,
-	}}}
-	res = &InitializeResult{
-		Capabilities:    capabilities,
-		ProtocolVersion: negotiatedVersion,
-		ServerInfo:      serverInfo,
-	}
-	a.log(ctx, "response", map[string]any{
-		"method":           "initialize",
-		"protocol_version": res.ProtocolVersion,
-		"server_name":      serverInfo.Name,
-		"session_id":       sessionID,
-	})
-	return res, nil
-}
-
-// Ping handles the MCP ping request.
-func (a *MCPAdapter) Ping(ctx context.Context) (res *PingResult, err error) {
-	ctx, span, start, attrs := a.startTelemetry(ctx, "ping")
-	defer func() {
-		a.finishTelemetry(ctx, span, start, attrs, err, false)
-	}()
-	a.log(ctx, "request", map[string]any{"method": "ping"})
-	res = &PingResult{Pong: true}
-	a.log(ctx, "response", map[string]any{"method": "ping"})
-	return res, nil
-}
-
-// Broadcaster and publish helpers for server-initiated events
-// Publish sends an event to all event stream subscribers.
-func (a *MCPAdapter) Publish(ev *EventsStreamResult) {
-	if a == nil || a.broadcaster == nil {
-		return
-	}
-	a.broadcaster.Publish(ev)
-}
-
-// PublishSession sends an event to subscribers for one MCP session.
-func (a *MCPAdapter) PublishSession(sessionID string, ev *EventsStreamResult) {
-	if a == nil || a.broadcaster == nil {
-		return
-	}
-	if sessionID == "" {
-		a.broadcaster.Publish(ev)
-		return
-	}
-	if scoped, ok := a.broadcaster.(mcpruntime.SessionBroadcaster); ok {
-		scoped.PublishSession(sessionID, ev)
-	}
-}
-
-// PublishContext sends an event to subscribers for the MCP session in ctx.
-func (a *MCPAdapter) PublishContext(ctx context.Context, ev *EventsStreamResult) {
-	a.PublishSession(mcpruntime.SessionIDFromContext(ctx), ev)
-}
-
-// PublishStatus is a convenience to publish a status_update message.
-func (a *MCPAdapter) PublishStatus(ctx context.Context, typ string, message string, data any) {
-	n := &mcpruntime.Notification{
-		Data:    data,
-		Message: &message,
-		Type:    typ,
-	}
-	s, err := mcpruntime.EncodeJSONToString(ctx, goahttp.ResponseEncoder, n)
-	if err != nil {
-		return
-	}
-	a.PublishContext(ctx, &EventsStreamResult{Content: []*ContentItem{buildContentItem(a, s)}})
-}
-
 // Tools handling
+type Icon struct {
+	Src      string   `json:"src"`
+	MimeType *string  `json:"mimeType,omitempty"`
+	Sizes    []string `json:"sizes,omitempty"`
+	Theme    *string  `json:"theme,omitempty"`
+}
+type ToolInfo struct {
+	Name         string  `json:"name"`
+	Title        *string `json:"title,omitempty"`
+	Description  *string `json:"description,omitempty"`
+	InputSchema  any     `json:"inputSchema,omitempty"`
+	OutputSchema any     `json:"outputSchema,omitempty"`
+	Annotations  any     `json:"annotations,omitempty"`
+	Meta         any     `json:"_meta,omitempty"`
+	Icons        []*Icon `json:"icons,omitempty"`
+}
+type toolCallResultCollector struct {
+	adapter   *MCPAdapter
+	parts     []*ToolsCallResult
+	final     *ToolsCallResult
+	streamErr error
+}
+
+func newToolCallResultCollector(adapter *MCPAdapter) *toolCallResultCollector {
+	return &toolCallResultCollector{adapter: adapter}
+}
+func (c *toolCallResultCollector) Send(_ context.Context, result *ToolsCallResult) error {
+	c.parts = append(c.parts, result)
+	return nil
+}
+func (c *toolCallResultCollector) SendAndClose(_ context.Context, result *ToolsCallResult) error {
+	c.final = result
+	return nil
+}
+func (c *toolCallResultCollector) SendError(_ context.Context, _ any, err error) error {
+	c.streamErr = err
+	return nil
+}
+func (c *toolCallResultCollector) result() *ToolsCallResult {
+	if c == nil {
+		return &ToolsCallResult{}
+	}
+	if c.streamErr != nil {
+		mapped := c.streamErr
+		if c.adapter != nil {
+			mapped = c.adapter.mapError(mapped)
+		}
+		isError := true
+		return &ToolsCallResult{
+			Content: []*ContentItem{buildContentItem(c.adapter, formatToolErrorText(mapped))},
+			IsError: &isError,
+		}
+	}
+	if len(c.parts) == 0 {
+		if c.final == nil {
+			return &ToolsCallResult{}
+		}
+		return c.final
+	}
+	merged := &ToolsCallResult{}
+	for _, part := range append(c.parts, c.final) {
+		if part == nil {
+			continue
+		}
+		merged.Content = append(merged.Content, part.Content...)
+		if part.StructuredContent.Present() {
+			merged.StructuredContent = part.StructuredContent
+		}
+		if part.IsError != nil {
+			value := *part.IsError
+			merged.IsError = &value
+		}
+	}
+	return merged
+}
 func decodeMCPPayloadStrict(data []byte, payload any) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
@@ -1599,9 +1537,12 @@ func toolSearchRank(tool *ToolInfo, query string, settings toolSearchSettings) i
 	}
 	return -1
 }
-func (a *MCPAdapter) handleSearchTools(ctx context.Context, p *ToolsCallPayload, stream ToolsCallServerStream) (bool, error) {
+func (a *MCPAdapter) handleSearchTools(ctx context.Context, p *ToolsCallPayload, stream toolCallStream) (bool, error) {
 	var payload toolSearchPayload
-	arguments := p.Arguments
+	arguments, err := mcpJSONRaw(p.Arguments)
+	if err != nil {
+		return false, err
+	}
 	if len(bytes.TrimSpace(arguments)) == 0 {
 		arguments = json.RawMessage([]byte("{}"))
 	}
@@ -1702,12 +1643,16 @@ func (a *MCPAdapter) handleSearchTools(ctx context.Context, p *ToolsCallPayload,
 	text := strings.Join(lines, "\n")
 	return false, stream.SendAndClose(ctx, &ToolsCallResult{
 		Content:           []*ContentItem{buildContentItem(a, text)},
-		StructuredContent: structured,
+		StructuredContent: mcpJSONFromRaw(structured),
 	})
 }
-func (a *MCPAdapter) handleCallToolProxy(ctx context.Context, p *ToolsCallPayload, stream ToolsCallServerStream) (bool, error) {
+func (a *MCPAdapter) handleCallToolProxy(ctx context.Context, p *ToolsCallPayload, stream toolCallStream) (bool, error) {
+	rawArguments, err := mcpJSONRaw(p.Arguments)
+	if err != nil {
+		return false, err
+	}
 	var payload toolCallProxyPayload
-	if err := decodeMCPPayloadStrict(p.Arguments, &payload); err != nil {
+	if err := decodeMCPPayloadStrict(rawArguments, &payload); err != nil {
 		return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", "Provide {\"name\":\"tool_name\",\"arguments\":{...}} to call a discovered tool."))
 	}
 	payload.Name = strings.TrimSpace(payload.Name)
@@ -1725,34 +1670,17 @@ func (a *MCPAdapter) handleCallToolProxy(ctx context.Context, p *ToolsCallPayloa
 		arguments = json.RawMessage([]byte("{}"))
 	}
 	proxied := &ToolsCallPayload{
-		Arguments: arguments,
+		Arguments: mcpJSONFromRaw(arguments),
 		Name:      payload.Name,
 	}
-	info := a.toolCallInfo(proxied)
-	handler := a.wrapToolCallHandler(info, a.executeRealTool)
-	return handler(ctx, proxied, stream)
-}
-func (a *MCPAdapter) ToolsList(ctx context.Context, p *ToolsListPayload) (res *ToolsListResult, err error) {
-	ctx, span, start, attrs := a.startTelemetry(ctx, "tools/list")
-	defer func() {
-		a.finishTelemetry(ctx, span, start, attrs, err, false)
-	}()
-	if !a.isInitialized(ctx) {
-		return nil, loom.PermanentError("invalid_params", "Not initialized")
+	info := a.toolCallInfo(proxied, arguments)
+	handler := a.wrapToolCallHandler(info, a.collectRealToolCall)
+	result, err := handler(ctx, proxied)
+	if err != nil {
+		return false, err
 	}
-	if p != nil && p.Cursor != nil && *p.Cursor != "" {
-		return nil, loom.PermanentError("invalid_params", "%s pagination is not implemented; cursor must be empty", "tools/list")
-	}
-	a.log(ctx, "request", map[string]any{"method": "tools/list"})
-	tools := a.generatedToolCatalog()
-	if a.toolSearchEnabled() {
-		visible := a.visibleToolCatalog(tools)
-		tools = a.toolSearchSyntheticTools()
-		tools = append(tools, visible...)
-	}
-	res = &ToolsListResult{Tools: tools}
-	a.log(ctx, "response", map[string]any{"method": "tools/list"})
-	return res, nil
+	toolErr := result != nil && result.IsError != nil && *result.IsError
+	return toolErr, stream.SendAndClose(ctx, result)
 }
 func listWorkflowsInputRecovery(err error, raw json.RawMessage) string {
 	message := strings.TrimSpace(loom.ErrorSafeMessage(err))
@@ -1949,13 +1877,20 @@ func getClusterWorkflowTemplateInputRecovery(err error, raw json.RawMessage) str
 	}
 	return "Provide valid tool arguments. Example: " + example
 }
-func (a *MCPAdapter) ToolsCall(ctx context.Context, p *ToolsCallPayload, stream ToolsCallServerStream) (res *ToolsCallResult, err error) {
+func (a *MCPAdapter) ToolsCall(ctx context.Context, p *ToolsCallPayload) (res *ToolsCallResult, err error) {
 	attrs := []attribute.KeyValue{}
+	var rawArguments json.RawMessage
+	if p != nil {
+		rawArguments, err = mcpJSONRaw(p.Arguments)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if p != nil && p.Name != "" {
 		attrs = append(attrs, attribute.String("mcp.tool", p.Name), attribute.String("tool", p.Name))
 		if a.isToolCallProxyName(p.Name) {
 			var target toolCallProxyPayload
-			if json.Unmarshal(p.Arguments, &target) == nil && strings.TrimSpace(target.Name) != "" {
+			if json.Unmarshal(rawArguments, &target) == nil && strings.TrimSpace(target.Name) != "" {
 				attrs = append(attrs, attribute.String("mcp.target_tool", strings.TrimSpace(target.Name)))
 			}
 		}
@@ -1965,12 +1900,29 @@ func (a *MCPAdapter) ToolsCall(ctx context.Context, p *ToolsCallPayload, stream 
 	defer func() {
 		a.finishTelemetry(ctx, span, start, attrs, err, toolErr)
 	}()
-	info := a.toolCallInfo(p)
-	handler := a.wrapToolCallHandler(info, a.toolsCallHandler)
-	toolErr, err = handler(ctx, p, stream)
-	return nil, err
+	info := a.toolCallInfo(p, rawArguments)
+	handler := a.wrapToolCallHandler(info, a.collectToolsCall)
+	res, err = handler(ctx, p)
+	if res != nil && res.IsError != nil {
+		toolErr = *res.IsError
+	}
+	return res, err
 }
-func (a *MCPAdapter) toolsCallHandler(ctx context.Context, p *ToolsCallPayload, stream ToolsCallServerStream) (bool, error) {
+func (a *MCPAdapter) collectToolsCall(ctx context.Context, p *ToolsCallPayload) (*ToolsCallResult, error) {
+	return a.collectToolCall(ctx, p, a.toolsCallHandler)
+}
+func (a *MCPAdapter) collectRealToolCall(ctx context.Context, p *ToolsCallPayload) (*ToolsCallResult, error) {
+	return a.collectToolCall(ctx, p, a.executeRealTool)
+}
+func (a *MCPAdapter) collectToolCall(ctx context.Context, p *ToolsCallPayload, handler toolCallStreamHandler) (*ToolsCallResult, error) {
+	stream := newToolCallResultCollector(a)
+	_, err := handler(ctx, p, stream)
+	if err != nil {
+		return nil, err
+	}
+	return stream.result(), nil
+}
+func (a *MCPAdapter) toolsCallHandler(ctx context.Context, p *ToolsCallPayload, stream toolCallStream) (bool, error) {
 	if !a.isInitialized(ctx) {
 		return false, loom.PermanentError("invalid_params", "Not initialized")
 	}
@@ -1993,22 +1945,24 @@ func (a *MCPAdapter) toolsCallHandler(ctx context.Context, p *ToolsCallPayload, 
 	}
 	return a.executeRealTool(ctx, p, stream)
 }
-func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, stream ToolsCallServerStream) (bool, error) {
-	arguments := bytes.TrimSpace(p.Arguments)
+func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, stream toolCallStream) (bool, error) {
+	arguments, err := mcpJSONRaw(p.Arguments)
+	if err != nil {
+		return false, err
+	}
+	arguments = bytes.TrimSpace(arguments)
 	if len(arguments) == 0 || bytes.Equal(arguments, []byte("null")) {
-		normalized := *p
-		normalized.Arguments = json.RawMessage([]byte("{}"))
-		p = &normalized
+		arguments = json.RawMessage([]byte("{}"))
 	}
 	switch p.Name {
 	case "list_workflows":
 		var payload *argo.ListWorkflowsPayload
-		rawFields, err := decodeMCPPayloadFields(p.Arguments)
+		rawFields, err := decodeMCPPayloadFields(arguments)
 		if err != nil {
-			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", listWorkflowsInputRecovery(err, p.Arguments)))
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", listWorkflowsInputRecovery(err, arguments)))
 		}
-		if err := decodeMCPPayloadStrict(p.Arguments, &payload); err != nil {
-			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", listWorkflowsInputRecovery(err, p.Arguments)))
+		if err := decodeMCPPayloadStrict(arguments, &payload); err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", listWorkflowsInputRecovery(err, arguments)))
 		}
 		{
 			if _, ok := rawFields["limit"]; !ok {
@@ -2017,7 +1971,7 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		}
 		{
 			if err := validateMCPPayloadEnum(rawFields, "status", true, "Running", "Succeeded", "Failed", "Pending", "Error"); err != nil {
-				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", listWorkflowsInputRecovery(err, p.Arguments)))
+				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", listWorkflowsInputRecovery(err, arguments)))
 			}
 		}
 		result, err := a.service.ListWorkflows(ctx, payload)
@@ -2031,7 +1985,7 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		s := string(structuredContent)
 		final := &ToolsCallResult{
 			Content:           []*ContentItem{buildContentItem(a, s)},
-			StructuredContent: structuredContent,
+			StructuredContent: mcpJSONFromRaw(structuredContent),
 		}
 		a.log(ctx, "response", map[string]any{
 			"method": "tools/call",
@@ -2040,16 +1994,16 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		return false, stream.SendAndClose(ctx, final)
 	case "get_workflow":
 		var payload *argo.GetWorkflowPayload
-		rawFields, err := decodeMCPPayloadFields(p.Arguments)
+		rawFields, err := decodeMCPPayloadFields(arguments)
 		if err != nil {
-			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowInputRecovery(err, p.Arguments)))
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowInputRecovery(err, arguments)))
 		}
-		if err := decodeMCPPayloadStrict(p.Arguments, &payload); err != nil {
-			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowInputRecovery(err, p.Arguments)))
+		if err := decodeMCPPayloadStrict(arguments, &payload); err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowInputRecovery(err, arguments)))
 		}
 		{
 			if err := validateMCPPayloadRequired(rawFields, "name"); err != nil {
-				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowInputRecovery(err, p.Arguments)))
+				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowInputRecovery(err, arguments)))
 			}
 		}
 		result, err := a.service.GetWorkflow(ctx, payload)
@@ -2063,7 +2017,7 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		s := string(structuredContent)
 		final := &ToolsCallResult{
 			Content:           []*ContentItem{buildContentItem(a, s)},
-			StructuredContent: structuredContent,
+			StructuredContent: mcpJSONFromRaw(structuredContent),
 		}
 		a.log(ctx, "response", map[string]any{
 			"method": "tools/call",
@@ -2072,12 +2026,12 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		return false, stream.SendAndClose(ctx, final)
 	case "get_workflow_logs":
 		var payload *argo.GetWorkflowLogsPayload
-		rawFields, err := decodeMCPPayloadFields(p.Arguments)
+		rawFields, err := decodeMCPPayloadFields(arguments)
 		if err != nil {
-			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowLogsInputRecovery(err, p.Arguments)))
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowLogsInputRecovery(err, arguments)))
 		}
-		if err := decodeMCPPayloadStrict(p.Arguments, &payload); err != nil {
-			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowLogsInputRecovery(err, p.Arguments)))
+		if err := decodeMCPPayloadStrict(arguments, &payload); err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowLogsInputRecovery(err, arguments)))
 		}
 		{
 			if _, ok := rawFields["container"]; !ok {
@@ -2089,7 +2043,7 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		}
 		{
 			if err := validateMCPPayloadRequired(rawFields, "workflow_name"); err != nil {
-				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowLogsInputRecovery(err, p.Arguments)))
+				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowLogsInputRecovery(err, arguments)))
 			}
 		}
 		result, err := a.service.GetWorkflowLogs(ctx, payload)
@@ -2103,7 +2057,7 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		s := string(structuredContent)
 		final := &ToolsCallResult{
 			Content:           []*ContentItem{buildContentItem(a, s)},
-			StructuredContent: structuredContent,
+			StructuredContent: mcpJSONFromRaw(structuredContent),
 		}
 		a.log(ctx, "response", map[string]any{
 			"method": "tools/call",
@@ -2112,19 +2066,19 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		return false, stream.SendAndClose(ctx, final)
 	case "terminate_workflow":
 		var payload *argo.TerminateWorkflowPayload
-		rawFields, err := decodeMCPPayloadFields(p.Arguments)
+		rawFields, err := decodeMCPPayloadFields(arguments)
 		if err != nil {
-			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", terminateWorkflowInputRecovery(err, p.Arguments)))
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", terminateWorkflowInputRecovery(err, arguments)))
 		}
-		if err := decodeMCPPayloadStrict(p.Arguments, &payload); err != nil {
-			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", terminateWorkflowInputRecovery(err, p.Arguments)))
+		if err := decodeMCPPayloadStrict(arguments, &payload); err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", terminateWorkflowInputRecovery(err, arguments)))
 		}
 		{
 			if err := validateMCPPayloadRequired(rawFields, "name"); err != nil {
-				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", terminateWorkflowInputRecovery(err, p.Arguments)))
+				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", terminateWorkflowInputRecovery(err, arguments)))
 			}
 			if err := validateMCPPayloadRequired(rawFields, "reason"); err != nil {
-				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", terminateWorkflowInputRecovery(err, p.Arguments)))
+				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", terminateWorkflowInputRecovery(err, arguments)))
 			}
 		}
 		result, err := a.service.TerminateWorkflow(ctx, payload)
@@ -2138,7 +2092,7 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		s := string(structuredContent)
 		final := &ToolsCallResult{
 			Content:           []*ContentItem{buildContentItem(a, s)},
-			StructuredContent: structuredContent,
+			StructuredContent: mcpJSONFromRaw(structuredContent),
 		}
 		a.log(ctx, "response", map[string]any{
 			"method": "tools/call",
@@ -2147,16 +2101,16 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		return false, stream.SendAndClose(ctx, final)
 	case "retry_workflow":
 		var payload *argo.RetryWorkflowPayload
-		rawFields, err := decodeMCPPayloadFields(p.Arguments)
+		rawFields, err := decodeMCPPayloadFields(arguments)
 		if err != nil {
-			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", retryWorkflowInputRecovery(err, p.Arguments)))
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", retryWorkflowInputRecovery(err, arguments)))
 		}
-		if err := decodeMCPPayloadStrict(p.Arguments, &payload); err != nil {
-			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", retryWorkflowInputRecovery(err, p.Arguments)))
+		if err := decodeMCPPayloadStrict(arguments, &payload); err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", retryWorkflowInputRecovery(err, arguments)))
 		}
 		{
 			if err := validateMCPPayloadRequired(rawFields, "name"); err != nil {
-				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", retryWorkflowInputRecovery(err, p.Arguments)))
+				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", retryWorkflowInputRecovery(err, arguments)))
 			}
 		}
 		result, err := a.service.RetryWorkflow(ctx, payload)
@@ -2170,7 +2124,7 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		s := string(structuredContent)
 		final := &ToolsCallResult{
 			Content:           []*ContentItem{buildContentItem(a, s)},
-			StructuredContent: structuredContent,
+			StructuredContent: mcpJSONFromRaw(structuredContent),
 		}
 		a.log(ctx, "response", map[string]any{
 			"method": "tools/call",
@@ -2179,8 +2133,8 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		return false, stream.SendAndClose(ctx, final)
 	case "list_cron_workflows":
 		var payload *argo.ListCronWorkflowsPayload
-		if err := decodeMCPPayloadStrict(p.Arguments, &payload); err != nil {
-			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", listCronWorkflowsInputRecovery(err, p.Arguments)))
+		if err := decodeMCPPayloadStrict(arguments, &payload); err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", listCronWorkflowsInputRecovery(err, arguments)))
 		}
 		result, err := a.service.ListCronWorkflows(ctx, payload)
 		if err != nil {
@@ -2193,7 +2147,7 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		s := string(structuredContent)
 		final := &ToolsCallResult{
 			Content:           []*ContentItem{buildContentItem(a, s)},
-			StructuredContent: structuredContent,
+			StructuredContent: mcpJSONFromRaw(structuredContent),
 		}
 		a.log(ctx, "response", map[string]any{
 			"method": "tools/call",
@@ -2202,16 +2156,16 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		return false, stream.SendAndClose(ctx, final)
 	case "get_cron_workflow":
 		var payload *argo.GetCronWorkflowPayload
-		rawFields, err := decodeMCPPayloadFields(p.Arguments)
+		rawFields, err := decodeMCPPayloadFields(arguments)
 		if err != nil {
-			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getCronWorkflowInputRecovery(err, p.Arguments)))
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getCronWorkflowInputRecovery(err, arguments)))
 		}
-		if err := decodeMCPPayloadStrict(p.Arguments, &payload); err != nil {
-			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getCronWorkflowInputRecovery(err, p.Arguments)))
+		if err := decodeMCPPayloadStrict(arguments, &payload); err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getCronWorkflowInputRecovery(err, arguments)))
 		}
 		{
 			if err := validateMCPPayloadRequired(rawFields, "name"); err != nil {
-				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getCronWorkflowInputRecovery(err, p.Arguments)))
+				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getCronWorkflowInputRecovery(err, arguments)))
 			}
 		}
 		result, err := a.service.GetCronWorkflow(ctx, payload)
@@ -2225,7 +2179,7 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		s := string(structuredContent)
 		final := &ToolsCallResult{
 			Content:           []*ContentItem{buildContentItem(a, s)},
-			StructuredContent: structuredContent,
+			StructuredContent: mcpJSONFromRaw(structuredContent),
 		}
 		a.log(ctx, "response", map[string]any{
 			"method": "tools/call",
@@ -2234,12 +2188,12 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		return false, stream.SendAndClose(ctx, final)
 	case "get_cron_history":
 		var payload *argo.GetCronHistoryPayload
-		rawFields, err := decodeMCPPayloadFields(p.Arguments)
+		rawFields, err := decodeMCPPayloadFields(arguments)
 		if err != nil {
-			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getCronHistoryInputRecovery(err, p.Arguments)))
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getCronHistoryInputRecovery(err, arguments)))
 		}
-		if err := decodeMCPPayloadStrict(p.Arguments, &payload); err != nil {
-			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getCronHistoryInputRecovery(err, p.Arguments)))
+		if err := decodeMCPPayloadStrict(arguments, &payload); err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getCronHistoryInputRecovery(err, arguments)))
 		}
 		{
 			if _, ok := rawFields["limit"]; !ok {
@@ -2248,7 +2202,7 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		}
 		{
 			if err := validateMCPPayloadRequired(rawFields, "name"); err != nil {
-				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getCronHistoryInputRecovery(err, p.Arguments)))
+				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getCronHistoryInputRecovery(err, arguments)))
 			}
 		}
 		result, err := a.service.GetCronHistory(ctx, payload)
@@ -2262,7 +2216,7 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		s := string(structuredContent)
 		final := &ToolsCallResult{
 			Content:           []*ContentItem{buildContentItem(a, s)},
-			StructuredContent: structuredContent,
+			StructuredContent: mcpJSONFromRaw(structuredContent),
 		}
 		a.log(ctx, "response", map[string]any{
 			"method": "tools/call",
@@ -2271,16 +2225,16 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		return false, stream.SendAndClose(ctx, final)
 	case "toggle_cron_suspension":
 		var payload *argo.ToggleCronSuspensionPayload
-		rawFields, err := decodeMCPPayloadFields(p.Arguments)
+		rawFields, err := decodeMCPPayloadFields(arguments)
 		if err != nil {
-			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", toggleCronSuspensionInputRecovery(err, p.Arguments)))
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", toggleCronSuspensionInputRecovery(err, arguments)))
 		}
-		if err := decodeMCPPayloadStrict(p.Arguments, &payload); err != nil {
-			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", toggleCronSuspensionInputRecovery(err, p.Arguments)))
+		if err := decodeMCPPayloadStrict(arguments, &payload); err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", toggleCronSuspensionInputRecovery(err, arguments)))
 		}
 		{
 			if err := validateMCPPayloadRequired(rawFields, "name"); err != nil {
-				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", toggleCronSuspensionInputRecovery(err, p.Arguments)))
+				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", toggleCronSuspensionInputRecovery(err, arguments)))
 			}
 		}
 		result, err := a.service.ToggleCronSuspension(ctx, payload)
@@ -2294,7 +2248,7 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		s := string(structuredContent)
 		final := &ToolsCallResult{
 			Content:           []*ContentItem{buildContentItem(a, s)},
-			StructuredContent: structuredContent,
+			StructuredContent: mcpJSONFromRaw(structuredContent),
 		}
 		a.log(ctx, "response", map[string]any{
 			"method": "tools/call",
@@ -2303,8 +2257,8 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		return false, stream.SendAndClose(ctx, final)
 	case "list_workflow_templates":
 		var payload *argo.ListWorkflowTemplatesPayload
-		if err := decodeMCPPayloadStrict(p.Arguments, &payload); err != nil {
-			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", listWorkflowTemplatesInputRecovery(err, p.Arguments)))
+		if err := decodeMCPPayloadStrict(arguments, &payload); err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", listWorkflowTemplatesInputRecovery(err, arguments)))
 		}
 		result, err := a.service.ListWorkflowTemplates(ctx, payload)
 		if err != nil {
@@ -2317,7 +2271,7 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		s := string(structuredContent)
 		final := &ToolsCallResult{
 			Content:           []*ContentItem{buildContentItem(a, s)},
-			StructuredContent: structuredContent,
+			StructuredContent: mcpJSONFromRaw(structuredContent),
 		}
 		a.log(ctx, "response", map[string]any{
 			"method": "tools/call",
@@ -2326,16 +2280,16 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		return false, stream.SendAndClose(ctx, final)
 	case "get_workflow_template":
 		var payload *argo.GetWorkflowTemplatePayload
-		rawFields, err := decodeMCPPayloadFields(p.Arguments)
+		rawFields, err := decodeMCPPayloadFields(arguments)
 		if err != nil {
-			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowTemplateInputRecovery(err, p.Arguments)))
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowTemplateInputRecovery(err, arguments)))
 		}
-		if err := decodeMCPPayloadStrict(p.Arguments, &payload); err != nil {
-			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowTemplateInputRecovery(err, p.Arguments)))
+		if err := decodeMCPPayloadStrict(arguments, &payload); err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowTemplateInputRecovery(err, arguments)))
 		}
 		{
 			if err := validateMCPPayloadRequired(rawFields, "name"); err != nil {
-				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowTemplateInputRecovery(err, p.Arguments)))
+				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowTemplateInputRecovery(err, arguments)))
 			}
 		}
 		result, err := a.service.GetWorkflowTemplate(ctx, payload)
@@ -2349,7 +2303,7 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		s := string(structuredContent)
 		final := &ToolsCallResult{
 			Content:           []*ContentItem{buildContentItem(a, s)},
-			StructuredContent: structuredContent,
+			StructuredContent: mcpJSONFromRaw(structuredContent),
 		}
 		a.log(ctx, "response", map[string]any{
 			"method": "tools/call",
@@ -2358,8 +2312,8 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		return false, stream.SendAndClose(ctx, final)
 	case "list_cluster_workflow_templates":
 		var payload *argo.ListClusterWorkflowTemplatesPayload
-		if err := decodeMCPPayloadStrict(p.Arguments, &payload); err != nil {
-			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", listClusterWorkflowTemplatesInputRecovery(err, p.Arguments)))
+		if err := decodeMCPPayloadStrict(arguments, &payload); err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", listClusterWorkflowTemplatesInputRecovery(err, arguments)))
 		}
 		result, err := a.service.ListClusterWorkflowTemplates(ctx, payload)
 		if err != nil {
@@ -2372,7 +2326,7 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		s := string(structuredContent)
 		final := &ToolsCallResult{
 			Content:           []*ContentItem{buildContentItem(a, s)},
-			StructuredContent: structuredContent,
+			StructuredContent: mcpJSONFromRaw(structuredContent),
 		}
 		a.log(ctx, "response", map[string]any{
 			"method": "tools/call",
@@ -2381,16 +2335,16 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		return false, stream.SendAndClose(ctx, final)
 	case "get_cluster_workflow_template":
 		var payload *argo.GetClusterWorkflowTemplatePayload
-		rawFields, err := decodeMCPPayloadFields(p.Arguments)
+		rawFields, err := decodeMCPPayloadFields(arguments)
 		if err != nil {
-			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getClusterWorkflowTemplateInputRecovery(err, p.Arguments)))
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getClusterWorkflowTemplateInputRecovery(err, arguments)))
 		}
-		if err := decodeMCPPayloadStrict(p.Arguments, &payload); err != nil {
-			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getClusterWorkflowTemplateInputRecovery(err, p.Arguments)))
+		if err := decodeMCPPayloadStrict(arguments, &payload); err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getClusterWorkflowTemplateInputRecovery(err, arguments)))
 		}
 		{
 			if err := validateMCPPayloadRequired(rawFields, "name"); err != nil {
-				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getClusterWorkflowTemplateInputRecovery(err, p.Arguments)))
+				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getClusterWorkflowTemplateInputRecovery(err, arguments)))
 			}
 		}
 		result, err := a.service.GetClusterWorkflowTemplate(ctx, payload)
@@ -2404,7 +2358,7 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		s := string(structuredContent)
 		final := &ToolsCallResult{
 			Content:           []*ContentItem{buildContentItem(a, s)},
-			StructuredContent: structuredContent,
+			StructuredContent: mcpJSONFromRaw(structuredContent),
 		}
 		a.log(ctx, "response", map[string]any{
 			"method": "tools/call",
@@ -2413,66 +2367,5 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		return false, stream.SendAndClose(ctx, final)
 	default:
 		return false, loom.PermanentError("invalid_params", "Unknown tool: %s", p.Name)
-	}
-}
-
-// Notifications and events stream
-func (a *MCPAdapter) EventsStream(ctx context.Context, stream EventsStreamServerStream) (res *EventsStreamResult, err error) {
-	if !a.isInitialized(ctx) {
-		return nil, loom.PermanentError("internal_error", "Not initialized")
-	}
-	a.log(ctx, "request", map[string]any{
-		"method":     "events/stream",
-		"session_id": mcpruntime.SessionIDFromContext(ctx),
-	})
-	sessionID := mcpruntime.SessionIDFromContext(ctx)
-	var sub mcpruntime.Subscription
-	if scoped, ok := a.broadcaster.(mcpruntime.SessionBroadcaster); ok && sessionID != "" {
-		sub, err = scoped.SubscribeSession(ctx, sessionID)
-	} else {
-		sub, err = a.broadcaster.Subscribe(ctx)
-	}
-	if err != nil {
-		return nil, loom.PermanentError("internal_error", "Failed to subscribe to events: %v", err)
-	}
-	defer sub.Close()
-	for {
-		select {
-		case <-ctx.Done():
-			a.log(ctx, "response", map[string]any{
-				"closed":     true,
-				"method":     "events/stream",
-				"reason":     ctx.Err().Error(),
-				"session_id": mcpruntime.SessionIDFromContext(ctx),
-			})
-			return nil, ctx.Err()
-		case ev, ok := <-sub.C():
-			if !ok {
-				a.log(ctx, "response", map[string]any{
-					"closed":     true,
-					"method":     "events/stream",
-					"reason":     "broadcaster_closed",
-					"session_id": mcpruntime.SessionIDFromContext(ctx),
-				})
-				return nil, nil
-			}
-			evt, ok := ev.(EventsStreamEvent)
-			if !ok {
-				a.log(ctx, "response", map[string]any{
-					"dropped_event_type": fmt.Sprintf("%T", ev),
-					"method":             "events/stream",
-					"session_id":         mcpruntime.SessionIDFromContext(ctx),
-				})
-				continue
-			}
-			if err := stream.Send(ctx, evt); err != nil {
-				return nil, loom.PermanentError("internal_error", "Failed to send event: %v", err)
-			}
-			a.log(ctx, "response", map[string]any{
-				"event_type": fmt.Sprintf("%T", evt),
-				"method":     "events/stream",
-				"session_id": mcpruntime.SessionIDFromContext(ctx),
-			})
-		}
 	}
 }

@@ -25,15 +25,6 @@ func (i testInfo) RawPayload() any                    { return nil }
 func (i testInfo) Tool() string                       { return i.tool }
 func (i testInfo) RawArguments() json.RawMessage      { return i.args }
 
-type testStream struct{ final *mcpargo.ToolsCallResult }
-
-func (*testStream) Send(context.Context, mcpargo.ToolsCallEvent) error { return nil }
-func (s *testStream) SendAndClose(_ context.Context, event mcpargo.ToolsCallEvent) error {
-	s.final, _ = event.(*mcpargo.ToolsCallResult)
-	return nil
-}
-func (*testStream) SendError(context.Context, any, error) error { return nil }
-
 func TestInterceptorWritesJSONLAndRedactsConfirmationToken(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "audit.jsonl")
 	audit, err := Open(path)
@@ -41,16 +32,18 @@ func TestInterceptorWritesJSONLAndRedactsConfirmationToken(t *testing.T) {
 		t.Fatalf("Open returned error: %v", err)
 	}
 	defer audit.Close()
-	stream := &testStream{}
 	info := testInfo{tool: "terminate_workflow", args: json.RawMessage(`{"namespace":"argo-ci","confirmation_token":"secret"}`)}
 	interceptor := audit.Interceptor()
-	_, err = interceptor(context.Background(), info, &mcpargo.ToolsCallPayload{Name: info.tool, Arguments: info.args}, stream,
-		func(ctx context.Context, _ *mcpargo.ToolsCallPayload, stream mcpargo.ToolsCallServerStream) (bool, error) {
+	result, err := interceptor(context.Background(), info, &mcpargo.ToolsCallPayload{Name: info.tool},
+		func(context.Context, *mcpargo.ToolsCallPayload) (*mcpargo.ToolsCallResult, error) {
 			message := "terminated"
-			return false, stream.SendAndClose(ctx, &mcpargo.ToolsCallResult{Content: []*mcpargo.ContentItem{{Type: "text", Text: &message}}})
+			return &mcpargo.ToolsCallResult{Content: []*mcpargo.ContentItem{{Type: "text", Text: &message}}}, nil
 		})
 	if err != nil {
 		t.Fatalf("interceptor returned error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("interceptor returned nil result")
 	}
 	if closeErr := audit.Close(); closeErr != nil {
 		t.Fatalf("Close returned error: %v", closeErr)

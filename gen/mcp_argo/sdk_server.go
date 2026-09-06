@@ -10,28 +10,28 @@ package mcpargo
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
-	"errors"
+	jsontext "encoding/json/jsontext"
+	json "encoding/json/v2"
 	"fmt"
 	"net/http"
-	"net/url"
 	"slices"
-	"sync"
 
 	argo "github.com/CaliLuke/go-argo-mcp/gen/argo"
-	mcpruntime "github.com/CaliLuke/loom-mcp/v2/runtime/mcp"
-	sdkclient "github.com/CaliLuke/loom-mcp/v2/runtime/mcp/sdkclient"
+	sdkbridge "github.com/CaliLuke/loom-mcp/v2/runtime/mcp/sdkbridge"
 	loomhttp "github.com/CaliLuke/loom/http"
 	"github.com/CaliLuke/loom/observability/transport"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// SDK-backed MCP streamable HTTP server.
+// SDKServer is an official SDK-backed MCP streamable HTTP server.
 type SDKServer struct {
 	Handler http.Handler
 	Adapter *MCPAdapter
 	Server  *mcpsdk.Server
+	bridge  *sdkbridge.Server
 }
+
+// SDKServerOptions configures the generated service binding and shared SDK bridge.
 type SDKServerOptions struct {
 	Adapter        *MCPAdapterOptions
 	RequestContext func(context.Context, *http.Request) context.Context
@@ -40,357 +40,288 @@ type SDKServerOptions struct {
 	TransportObserver transport.Observer
 	RuntimeCORS       *loomhttp.RuntimeCORSPolicy
 	Server            *mcpsdk.ServerOptions
-	StreamableHTTP    *mcpsdk.StreamableHTTPOptions
-}
-type sdkResponseObserver struct {
-	http.ResponseWriter
-	statusCode      int
-	onSessionIssued func(string)
-	sessionOnce     sync.Once
+	OriginProtection  *sdkbridge.OriginProtection
+	StreamableHTTP    *sdkbridge.StreamableHTTPOptions
 }
 
+// NewSDKServer constructs the generated service adapter and shared official SDK bridge.
 func NewSDKServer(service argo.Service, opts *SDKServerOptions) (*SDKServer, error) {
 	var adapterOpts *MCPAdapterOptions
 	var requestContext func(context.Context, *http.Request) context.Context
 	var requestStateKey []byte
-	var transportObserver transport.Observer
-	var runtimeCORS *loomhttp.RuntimeCORSPolicy
-	var serverOpts *mcpsdk.ServerOptions
-	var streamableOpts *mcpsdk.StreamableHTTPOptions
+	var bridgeOptions sdkbridge.Options
 	if opts != nil {
 		adapterOpts = opts.Adapter
 		requestContext = opts.RequestContext
 		requestStateKey = opts.RequestStateKey
-		transportObserver = opts.TransportObserver
-		runtimeCORS = opts.RuntimeCORS
-		serverOpts = opts.Server
-		streamableOpts = opts.StreamableHTTP
-	}
-	if adapterOpts != nil && adapterOpts.ToolSearch != nil && adapterOpts.ToolSearch.AllowDirectHiddenCalls {
-		return nil, fmt.Errorf("SDK ToolSearch compact mode does not support AllowDirectHiddenCalls")
+		bridgeOptions = sdkbridge.Options{
+			OriginProtection:  opts.OriginProtection,
+			RequestContext:    requestContext,
+			RuntimeCORS:       opts.RuntimeCORS,
+			Server:            opts.Server,
+			StreamableHTTP:    opts.StreamableHTTP,
+			TransportObserver: opts.TransportObserver,
+		}
 	}
 	adapter := NewMCPAdapter(service, adapterOpts)
 	adapter.requestStateKey = slices.Clone(requestStateKey)
-	serverOpts = sdkServerOptionsWithDefaults(serverOpts)
-	server := mcpsdk.NewServer(&mcpsdk.Implementation{
-		Name:    "go-argo-mcp",
-		Version: "0.1.0",
-	}, serverOpts)
-	if err := registerSDKTools(server, adapter, requestContext); err != nil {
+	runtimeBridge, err := sdkbridge.NewServer(sdkbridge.Config{
+		CompatibilityVersion: 3,
+		Implementation: mcpsdk.Implementation{
+			Name:    "go-argo-mcp",
+			Version: "0.1.0",
+		},
+		Options: bridgeOptions,
+		Prompts: func() ([]sdkbridge.PromptBinding, error) {
+			return sdkPromptBindings(adapter)
+		},
+		Resources: func() ([]sdkbridge.ResourceBinding, error) {
+			return sdkResourceBindings(adapter)
+		},
+		Sessions: adapter.sessions,
+		Tools: func() ([]sdkbridge.ToolBinding, error) {
+			return sdkToolBindings(adapter)
+		},
+	})
+	if err != nil {
 		return nil, err
-	}
-	if err := registerSDKResources(server, adapter, requestContext); err != nil {
-		return nil, err
-	}
-	if err := registerSDKPrompts(server, adapter, requestContext); err != nil {
-		return nil, err
-	}
-	handler := newSDKHandler(server, adapter, requestContext, streamableOpts)
-	if transportObserver != nil {
-		handler = transport.HTTPMiddleware(transportObserver)(handler)
-	}
-	if runtimeCORS != nil {
-		handler = sdkRuntimeCORSHandler(handler, *runtimeCORS)
 	}
 	return &SDKServer{
 		Adapter: adapter,
-		Handler: handler,
-		Server:  server,
+		Handler: runtimeBridge.Handler,
+		Server:  runtimeBridge.SDK,
+		bridge:  runtimeBridge,
 	}, nil
-}
-func sdkServerOptionsWithDefaults(opts *mcpsdk.ServerOptions) *mcpsdk.ServerOptions {
-	if opts == nil {
-		opts = &mcpsdk.ServerOptions{}
-	} else {
-		copied := *opts
-		opts = &copied
-	}
-	if opts.Capabilities == nil {
-		opts.Capabilities = &mcpsdk.ServerCapabilities{Logging: &mcpsdk.LoggingCapabilities{}}
-	} else {
-		capabilities := *opts.Capabilities
-		opts.Capabilities = &capabilities
-	}
-	return opts
 }
 
 // ResourceUpdated notifies subscribed clients that a designed watchable resource changed.
 func (s *SDKServer) ResourceUpdated(ctx context.Context, uri string) error {
-	if s == nil || s.Server == nil {
+	if s == nil || s.bridge == nil {
 		return fmt.Errorf("MCP SDK server is not initialized")
 	}
-	return fmt.Errorf("unknown watchable MCP resource %q", uri)
+	return s.bridge.ResourceUpdated(ctx, uri)
 }
-func (w *sdkResponseObserver) captureSession() {
-	if w == nil || w.onSessionIssued == nil {
-		return
-	}
-	sessionID := w.Header().Get(mcpruntime.HeaderKeySessionID)
-	if sessionID == "" {
-		return
-	}
-	w.sessionOnce.Do(func() {
-		w.onSessionIssued(sessionID)
-	})
-}
-func (w *sdkResponseObserver) Unwrap() http.ResponseWriter {
-	return w.ResponseWriter
-}
-func (w *sdkResponseObserver) WriteHeader(statusCode int) {
-	w.statusCode = statusCode
-	if statusCode < http.StatusBadRequest {
-		w.captureSession()
-	}
-	w.ResponseWriter.WriteHeader(statusCode)
-}
-func (w *sdkResponseObserver) Write(data []byte) (int, error) {
-	if w.statusCode == 0 {
-		w.statusCode = http.StatusOK
-	}
-	if w.statusCode < http.StatusBadRequest {
-		w.captureSession()
-	}
-	return w.ResponseWriter.Write(data)
-}
-func newSDKHandler(server *mcpsdk.Server, adapter *MCPAdapter, requestContext func(context.Context, *http.Request) context.Context, streamableOpts *mcpsdk.StreamableHTTPOptions) http.Handler {
-	base := mcpsdk.NewStreamableHTTPHandler(func(*http.Request) *mcpsdk.Server {
-		return server
-	}, sdkStreamableHTTPOptions(streamableOpts))
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r = r.WithContext(mcpruntime.WithRequestHeaders(r.Context(), r.Header))
-		if requestContext != nil {
-			r = r.WithContext(requestContext(r.Context(), r))
-		}
-		if sessionID := r.Header.Get(mcpruntime.HeaderKeySessionID); sessionID != "" {
-			if err := adapter.assertSessionPrincipal(r.Context(), sessionID); err != nil {
-				writeSDKSessionError(w, err)
-				return
-			}
-		}
-		transportObs, transportW := transport.BeginHTTPRequest(r.Context(), w, "mcp", r.Method, r)
-		defer transportObs.End()
-		observer := &sdkResponseObserver{
-			ResponseWriter: transportW,
-			onSessionIssued: func(sessionID string) {
-				adapter.markInitializedSession(sessionID)
-				adapter.captureSessionPrincipal(r.Context(), sessionID)
-			},
-		}
-		base.ServeHTTP(observer, r)
-		if observer.statusCode < http.StatusBadRequest {
-			observer.captureSession()
-		}
-		if r.Method == http.MethodDelete && observer.statusCode < 400 {
-			adapter.clearSession(r.Header.Get(mcpruntime.HeaderKeySessionID))
-		}
-		if observer.statusCode >= 400 {
-			transportObs.Fail(transport.ReasonHandlerError)
-		}
-	})
-}
-func sdkStreamableHTTPOptions(opts *mcpsdk.StreamableHTTPOptions) *mcpsdk.StreamableHTTPOptions {
-	if opts == nil {
-		return &mcpsdk.StreamableHTTPOptions{CrossOriginProtection: http.NewCrossOriginProtection()}
-	}
-	configured := *opts
-	if configured.CrossOriginProtection == nil {
-		configured.CrossOriginProtection = http.NewCrossOriginProtection()
-	}
-	return &configured
-}
-func sdkRuntimeCORSHandler(next http.Handler, policy loomhttp.RuntimeCORSPolicy) http.Handler {
-	actual := policy.Handler(next.ServeHTTP)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodOptions {
-			policy.HandlePreflight(w, r, []string{http.MethodDelete, http.MethodGet, http.MethodPost})
-			return
-		}
-		actual(w, r)
-	})
-}
-func writeSDKSessionError(w http.ResponseWriter, err error) {
-	if errors.Is(err, errInvalidSessionID) {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-	http.Error(w, err.Error(), http.StatusForbidden)
-}
-func registerSDKTools(server *mcpsdk.Server, adapter *MCPAdapter, requestContext func(context.Context, *http.Request) context.Context) error {
+func sdkToolBindings(adapter *MCPAdapter) ([]sdkbridge.ToolBinding, error) {
+	handler := adapter.sdkToolHandler()
 	if adapter.toolSearchEnabled() {
 		tools := adapter.toolSearchSyntheticTools()
 		tools = append(tools, adapter.visibleToolCatalog(adapter.generatedToolCatalog())...)
+		bindings := make([]sdkbridge.ToolBinding, 0, len(tools))
 		for _, tool := range tools {
 			sdkTool, err := sdkToolFromToolInfo(tool)
 			if err != nil {
-				return err
+				return nil, err
 			}
-			server.AddTool(sdkTool, adapter.sdkToolHandler(requestContext))
+			bindings = append(bindings, sdkbridge.ToolBinding{
+				Handler: handler,
+				Tool:    sdkTool,
+			})
 		}
-		return nil
+		return bindings, nil
 	}
-	annotationsListWorkflows, err := sdkToolAnnotations(json.RawMessage([]byte("{\"readOnlyHint\":true}")))
+	bindings := make([]sdkbridge.ToolBinding, 0, 13)
+	annotationsListWorkflows, err := sdkToolAnnotations(jsontext.Value([]byte("{\"readOnlyHint\":true}")))
 	if err != nil {
-		return fmt.Errorf("tool %q annotations: %w", "list_workflows", err)
+		return nil, fmt.Errorf("tool %q annotations: %w", "list_workflows", err)
 	}
-	server.AddTool(&mcpsdk.Tool{
-		Annotations:  annotationsListWorkflows,
-		Description:  "List workflows in specified namespace(s) with optional status filtering",
-		InputSchema:  sdkToolInputSchema("{\"type\":\"object\",\"properties\":{\"limit\":{\"type\":\"integer\",\"description\":\"Maximum number of workflows to return\",\"default\":50,\"minimum\":1},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace to query\"},\"status\":{\"type\":\"string\",\"description\":\"Optional workflow status filter\",\"enum\":[\"Running\",\"Succeeded\",\"Failed\",\"Pending\",\"Error\"]}},\"additionalProperties\":false}"),
-		Name:         "list_workflows",
-		OutputSchema: sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"workflows\",\"count\",\"source\"],\"properties\":{\"count\":{\"type\":\"integer\"},\"namespace\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"workflows\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"description\":\"Workflow summary returned by Argo.\",\"required\":[\"name\",\"namespace\",\"status\"],\"properties\":{\"duration\":{\"type\":\"string\",\"description\":\"Elapsed workflow duration\"},\"finished_at\":{\"type\":\"string\",\"description\":\"RFC3339 finish timestamp\"},\"name\":{\"type\":\"string\",\"description\":\"Workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace\"},\"progress\":{\"type\":\"string\",\"description\":\"Completed nodes over total nodes\"},\"started_at\":{\"type\":\"string\",\"description\":\"RFC3339 start timestamp\"},\"status\":{\"type\":\"string\",\"description\":\"Workflow phase or status\"}},\"additionalProperties\":false}}},\"additionalProperties\":false}"),
-		Title:        "List Workflows",
-	}, adapter.sdkToolHandler(requestContext))
-	annotationsGetWorkflow, err := sdkToolAnnotations(json.RawMessage([]byte("{\"readOnlyHint\":true}")))
+	bindings = append(bindings, sdkbridge.ToolBinding{
+		Handler: handler,
+		Tool: &mcpsdk.Tool{
+			Annotations:  annotationsListWorkflows,
+			Description:  "List workflows in specified namespace(s) with optional status filtering",
+			InputSchema:  sdkToolInputSchema("{\"type\":\"object\",\"properties\":{\"limit\":{\"type\":\"integer\",\"description\":\"Maximum number of workflows to return\",\"default\":50,\"minimum\":1,\"maximum\":9223372036854775807},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace to query\"},\"status\":{\"type\":\"string\",\"description\":\"Optional workflow status filter\",\"enum\":[\"Running\",\"Succeeded\",\"Failed\",\"Pending\",\"Error\"]}},\"additionalProperties\":false}"),
+			Name:         "list_workflows",
+			OutputSchema: sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"workflows\",\"count\",\"source\"],\"properties\":{\"count\":{\"type\":\"integer\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"namespace\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"workflows\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"description\":\"Workflow summary returned by Argo.\",\"required\":[\"name\",\"namespace\",\"status\"],\"properties\":{\"duration\":{\"type\":\"string\",\"description\":\"Elapsed workflow duration\"},\"finished_at\":{\"type\":\"string\",\"description\":\"RFC3339 finish timestamp\"},\"name\":{\"type\":\"string\",\"description\":\"Workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace\"},\"progress\":{\"type\":\"string\",\"description\":\"Completed nodes over total nodes\"},\"started_at\":{\"type\":\"string\",\"description\":\"RFC3339 start timestamp\"},\"status\":{\"type\":\"string\",\"description\":\"Workflow phase or status\"}},\"additionalProperties\":false}}},\"additionalProperties\":false}"),
+			Title:        "List Workflows",
+		},
+	})
+	annotationsGetWorkflow, err := sdkToolAnnotations(jsontext.Value([]byte("{\"readOnlyHint\":true}")))
 	if err != nil {
-		return fmt.Errorf("tool %q annotations: %w", "get_workflow", err)
+		return nil, fmt.Errorf("tool %q annotations: %w", "get_workflow", err)
 	}
-	server.AddTool(&mcpsdk.Tool{
-		Annotations:  annotationsGetWorkflow,
-		Description:  "Get detailed information about a specific workflow",
-		InputSchema:  sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
-		Name:         "get_workflow",
-		OutputSchema: sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"name\",\"namespace\",\"status\"],\"properties\":{\"annotations\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"}},\"duration\":{\"type\":\"string\"},\"finished_at\":{\"type\":\"string\"},\"labels\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"}},\"message\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"outputs\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"}},\"parameters\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"}},\"progress\":{\"type\":\"string\"},\"started_at\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
-		Title:        "Get Workflow",
-	}, adapter.sdkToolHandler(requestContext))
-	annotationsGetWorkflowLogs, err := sdkToolAnnotations(json.RawMessage([]byte("{\"readOnlyHint\":true}")))
+	bindings = append(bindings, sdkbridge.ToolBinding{
+		Handler: handler,
+		Tool: &mcpsdk.Tool{
+			Annotations:  annotationsGetWorkflow,
+			Description:  "Get detailed information about a specific workflow",
+			InputSchema:  sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
+			Name:         "get_workflow",
+			OutputSchema: sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"name\",\"namespace\",\"status\"],\"properties\":{\"annotations\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"}},\"duration\":{\"type\":\"string\"},\"finished_at\":{\"type\":\"string\"},\"labels\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"}},\"message\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"outputs\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"}},\"parameters\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"}},\"progress\":{\"type\":\"string\"},\"started_at\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
+			Title:        "Get Workflow",
+		},
+	})
+	annotationsGetWorkflowLogs, err := sdkToolAnnotations(jsontext.Value([]byte("{\"readOnlyHint\":true}")))
 	if err != nil {
-		return fmt.Errorf("tool %q annotations: %w", "get_workflow_logs", err)
+		return nil, fmt.Errorf("tool %q annotations: %w", "get_workflow_logs", err)
 	}
-	server.AddTool(&mcpsdk.Tool{
-		Annotations:  annotationsGetWorkflowLogs,
-		Description:  "Get logs from a workflow's pods",
-		InputSchema:  sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"workflow_name\"],\"properties\":{\"container\":{\"type\":\"string\",\"default\":\"main\"},\"max_lines\":{\"type\":\"integer\",\"description\":\"Maximum lines to return; zero returns all lines\",\"default\":200,\"minimum\":0},\"namespace\":{\"type\":\"string\"},\"pod_name\":{\"type\":\"string\"},\"search\":{\"type\":\"string\"},\"workflow_name\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
-		Name:         "get_workflow_logs",
-		OutputSchema: sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"namespace\",\"workflow\",\"container\",\"total_lines\",\"matching_lines\",\"returned_lines\",\"logs\"],\"properties\":{\"container\":{\"type\":\"string\"},\"logs\":{\"type\":\"string\"},\"matching_lines\":{\"type\":\"integer\"},\"max_lines\":{\"type\":\"integer\"},\"namespace\":{\"type\":\"string\"},\"note\":{\"type\":\"string\"},\"pod\":{\"type\":\"string\"},\"returned_lines\":{\"type\":\"integer\"},\"search_term\":{\"type\":\"string\"},\"total_lines\":{\"type\":\"integer\"},\"workflow\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
-		Title:        "Get Workflow Logs",
-	}, adapter.sdkToolHandler(requestContext))
-	annotationsTerminateWorkflow, err := sdkToolAnnotations(json.RawMessage([]byte("{\"destructiveHint\":true}")))
+	bindings = append(bindings, sdkbridge.ToolBinding{
+		Handler: handler,
+		Tool: &mcpsdk.Tool{
+			Annotations:  annotationsGetWorkflowLogs,
+			Description:  "Get logs from a workflow's pods",
+			InputSchema:  sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"workflow_name\"],\"properties\":{\"container\":{\"type\":\"string\",\"default\":\"main\"},\"max_lines\":{\"type\":\"integer\",\"description\":\"Maximum lines to return; zero returns all lines\",\"default\":200,\"minimum\":0,\"maximum\":9223372036854775807},\"namespace\":{\"type\":\"string\"},\"pod_name\":{\"type\":\"string\"},\"search\":{\"type\":\"string\"},\"workflow_name\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
+			Name:         "get_workflow_logs",
+			OutputSchema: sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"namespace\",\"workflow\",\"container\",\"total_lines\",\"matching_lines\",\"returned_lines\",\"logs\"],\"properties\":{\"container\":{\"type\":\"string\"},\"logs\":{\"type\":\"string\"},\"matching_lines\":{\"type\":\"integer\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"max_lines\":{\"type\":\"integer\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"namespace\":{\"type\":\"string\"},\"note\":{\"type\":\"string\"},\"pod\":{\"type\":\"string\"},\"returned_lines\":{\"type\":\"integer\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"search_term\":{\"type\":\"string\"},\"total_lines\":{\"type\":\"integer\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"workflow\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
+			Title:        "Get Workflow Logs",
+		},
+	})
+	annotationsTerminateWorkflow, err := sdkToolAnnotations(jsontext.Value([]byte("{\"destructiveHint\":true}")))
 	if err != nil {
-		return fmt.Errorf("tool %q annotations: %w", "terminate_workflow", err)
+		return nil, fmt.Errorf("tool %q annotations: %w", "terminate_workflow", err)
 	}
-	server.AddTool(&mcpsdk.Tool{
-		Annotations:  annotationsTerminateWorkflow,
-		Description:  "Terminate a running workflow (DESTRUCTIVE - requires confirmation)",
-		InputSchema:  sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"name\",\"reason\"],\"properties\":{\"confirmation_token\":{\"type\":\"string\"},\"dry_run\":{\"type\":\"boolean\",\"description\":\"Preview mode; defaults to true\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
-		Name:         "terminate_workflow",
-		OutputSchema: sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"status\",\"message\"],\"properties\":{\"confirmation_token\":{\"type\":\"string\"},\"instructions\":{\"type\":\"string\"},\"message\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"preview\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"},\"restart_successful\":{\"type\":\"boolean\"},\"status\":{\"type\":\"string\",\"description\":\"ok, dry_run, confirmation_required, or denied\"}},\"additionalProperties\":false}"),
-		Title:        "Terminate Workflow",
-	}, adapter.sdkToolHandler(requestContext))
-	annotationsRetryWorkflow, err := sdkToolAnnotations(json.RawMessage([]byte("{\"destructiveHint\":true}")))
+	bindings = append(bindings, sdkbridge.ToolBinding{
+		Handler: handler,
+		Tool: &mcpsdk.Tool{
+			Annotations:  annotationsTerminateWorkflow,
+			Description:  "Terminate a running workflow (DESTRUCTIVE - requires confirmation)",
+			InputSchema:  sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"name\",\"reason\"],\"properties\":{\"confirmation_token\":{\"type\":\"string\"},\"dry_run\":{\"type\":\"boolean\",\"description\":\"Preview mode; defaults to true\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
+			Name:         "terminate_workflow",
+			OutputSchema: sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"status\",\"message\"],\"properties\":{\"confirmation_token\":{\"type\":\"string\"},\"instructions\":{\"type\":\"string\"},\"message\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"preview\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"},\"restart_successful\":{\"type\":\"boolean\"},\"status\":{\"type\":\"string\",\"description\":\"ok, dry_run, confirmation_required, or denied\"}},\"additionalProperties\":false}"),
+			Title:        "Terminate Workflow",
+		},
+	})
+	annotationsRetryWorkflow, err := sdkToolAnnotations(jsontext.Value([]byte("{\"destructiveHint\":true}")))
 	if err != nil {
-		return fmt.Errorf("tool %q annotations: %w", "retry_workflow", err)
+		return nil, fmt.Errorf("tool %q annotations: %w", "retry_workflow", err)
 	}
-	server.AddTool(&mcpsdk.Tool{
-		Annotations:  annotationsRetryWorkflow,
-		Description:  "Retry a failed workflow",
-		InputSchema:  sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"restart_successful\":{\"type\":\"boolean\",\"description\":\"Also restart successful steps; defaults to false\"}},\"additionalProperties\":false}"),
-		Name:         "retry_workflow",
-		OutputSchema: sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"status\",\"message\"],\"properties\":{\"confirmation_token\":{\"type\":\"string\"},\"instructions\":{\"type\":\"string\"},\"message\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"preview\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"},\"restart_successful\":{\"type\":\"boolean\"},\"status\":{\"type\":\"string\",\"description\":\"ok, dry_run, confirmation_required, or denied\"}},\"additionalProperties\":false}"),
-		Title:        "Retry Workflow",
-	}, adapter.sdkToolHandler(requestContext))
-	annotationsListCronWorkflows, err := sdkToolAnnotations(json.RawMessage([]byte("{\"readOnlyHint\":true}")))
+	bindings = append(bindings, sdkbridge.ToolBinding{
+		Handler: handler,
+		Tool: &mcpsdk.Tool{
+			Annotations:  annotationsRetryWorkflow,
+			Description:  "Retry a failed workflow",
+			InputSchema:  sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"restart_successful\":{\"type\":\"boolean\",\"description\":\"Also restart successful steps; defaults to false\"}},\"additionalProperties\":false}"),
+			Name:         "retry_workflow",
+			OutputSchema: sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"status\",\"message\"],\"properties\":{\"confirmation_token\":{\"type\":\"string\"},\"instructions\":{\"type\":\"string\"},\"message\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"preview\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"},\"restart_successful\":{\"type\":\"boolean\"},\"status\":{\"type\":\"string\",\"description\":\"ok, dry_run, confirmation_required, or denied\"}},\"additionalProperties\":false}"),
+			Title:        "Retry Workflow",
+		},
+	})
+	annotationsListCronWorkflows, err := sdkToolAnnotations(jsontext.Value([]byte("{\"readOnlyHint\":true}")))
 	if err != nil {
-		return fmt.Errorf("tool %q annotations: %w", "list_cron_workflows", err)
+		return nil, fmt.Errorf("tool %q annotations: %w", "list_cron_workflows", err)
 	}
-	server.AddTool(&mcpsdk.Tool{
-		Annotations:  annotationsListCronWorkflows,
-		Description:  "List CronWorkflows in namespace(s)",
-		InputSchema:  sdkToolInputSchema("{\"type\":\"object\",\"properties\":{\"namespace\":{\"type\":\"string\"},\"suspended\":{\"type\":\"boolean\"}},\"additionalProperties\":false}"),
-		Name:         "list_cron_workflows",
-		OutputSchema: sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"cron_workflows\",\"count\",\"source\"],\"properties\":{\"count\":{\"type\":\"integer\"},\"cron_workflows\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"name\",\"namespace\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"schedule\":{\"type\":\"string\"},\"suspended\":{\"type\":\"boolean\"}},\"additionalProperties\":false}},\"namespace\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"},\"suspended\":{\"type\":\"boolean\"}},\"additionalProperties\":false}"),
-		Title:        "List Cron Workflows",
-	}, adapter.sdkToolHandler(requestContext))
-	annotationsGetCronWorkflow, err := sdkToolAnnotations(json.RawMessage([]byte("{\"readOnlyHint\":true}")))
+	bindings = append(bindings, sdkbridge.ToolBinding{
+		Handler: handler,
+		Tool: &mcpsdk.Tool{
+			Annotations:  annotationsListCronWorkflows,
+			Description:  "List CronWorkflows in namespace(s)",
+			InputSchema:  sdkToolInputSchema("{\"type\":\"object\",\"properties\":{\"namespace\":{\"type\":\"string\"},\"suspended\":{\"type\":\"boolean\"}},\"additionalProperties\":false}"),
+			Name:         "list_cron_workflows",
+			OutputSchema: sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"cron_workflows\",\"count\",\"source\"],\"properties\":{\"count\":{\"type\":\"integer\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"cron_workflows\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"name\",\"namespace\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"schedule\":{\"type\":\"string\"},\"suspended\":{\"type\":\"boolean\"}},\"additionalProperties\":false}},\"namespace\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"},\"suspended\":{\"type\":\"boolean\"}},\"additionalProperties\":false}"),
+			Title:        "List Cron Workflows",
+		},
+	})
+	annotationsGetCronWorkflow, err := sdkToolAnnotations(jsontext.Value([]byte("{\"readOnlyHint\":true}")))
 	if err != nil {
-		return fmt.Errorf("tool %q annotations: %w", "get_cron_workflow", err)
+		return nil, fmt.Errorf("tool %q annotations: %w", "get_cron_workflow", err)
 	}
-	server.AddTool(&mcpsdk.Tool{
-		Annotations:  annotationsGetCronWorkflow,
-		Description:  "Get CronWorkflow details including schedule and last execution",
-		InputSchema:  sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
-		Name:         "get_cron_workflow",
-		OutputSchema: sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"name\",\"source\"],\"properties\":{\"last_scheduled_time\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"next_scheduled_time\":{\"type\":\"string\"},\"schedule\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"},\"suspended\":{\"type\":\"boolean\"}},\"additionalProperties\":false}"),
-		Title:        "Get Cron Workflow",
-	}, adapter.sdkToolHandler(requestContext))
-	annotationsGetCronHistory, err := sdkToolAnnotations(json.RawMessage([]byte("{\"readOnlyHint\":true}")))
+	bindings = append(bindings, sdkbridge.ToolBinding{
+		Handler: handler,
+		Tool: &mcpsdk.Tool{
+			Annotations:  annotationsGetCronWorkflow,
+			Description:  "Get CronWorkflow details including schedule and last execution",
+			InputSchema:  sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
+			Name:         "get_cron_workflow",
+			OutputSchema: sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"name\",\"source\"],\"properties\":{\"last_scheduled_time\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"next_scheduled_time\":{\"type\":\"string\"},\"schedule\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"},\"suspended\":{\"type\":\"boolean\"}},\"additionalProperties\":false}"),
+			Title:        "Get Cron Workflow",
+		},
+	})
+	annotationsGetCronHistory, err := sdkToolAnnotations(jsontext.Value([]byte("{\"readOnlyHint\":true}")))
 	if err != nil {
-		return fmt.Errorf("tool %q annotations: %w", "get_cron_history", err)
+		return nil, fmt.Errorf("tool %q annotations: %w", "get_cron_history", err)
 	}
-	server.AddTool(&mcpsdk.Tool{
-		Annotations:  annotationsGetCronHistory,
-		Description:  "Get execution history of a CronWorkflow",
-		InputSchema:  sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"limit\":{\"type\":\"integer\",\"default\":10,\"minimum\":1},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
-		Name:         "get_cron_history",
-		OutputSchema: sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"name\",\"history\",\"count\",\"source\"],\"properties\":{\"count\":{\"type\":\"integer\"},\"history\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"duration\":{\"type\":\"string\"},\"finished_at\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"started_at\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"}},\"additionalProperties\":false}},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
-		Title:        "Get Cron History",
-	}, adapter.sdkToolHandler(requestContext))
-	annotationsToggleCronSuspension, err := sdkToolAnnotations(json.RawMessage([]byte("{\"destructiveHint\":true}")))
+	bindings = append(bindings, sdkbridge.ToolBinding{
+		Handler: handler,
+		Tool: &mcpsdk.Tool{
+			Annotations:  annotationsGetCronHistory,
+			Description:  "Get execution history of a CronWorkflow",
+			InputSchema:  sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"limit\":{\"type\":\"integer\",\"default\":10,\"minimum\":1,\"maximum\":9223372036854775807},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
+			Name:         "get_cron_history",
+			OutputSchema: sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"name\",\"history\",\"count\",\"source\"],\"properties\":{\"count\":{\"type\":\"integer\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"history\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"duration\":{\"type\":\"string\"},\"finished_at\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"started_at\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"}},\"additionalProperties\":false}},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
+			Title:        "Get Cron History",
+		},
+	})
+	annotationsToggleCronSuspension, err := sdkToolAnnotations(jsontext.Value([]byte("{\"destructiveHint\":true}")))
 	if err != nil {
-		return fmt.Errorf("tool %q annotations: %w", "toggle_cron_suspension", err)
+		return nil, fmt.Errorf("tool %q annotations: %w", "toggle_cron_suspension", err)
 	}
-	server.AddTool(&mcpsdk.Tool{
-		Annotations:  annotationsToggleCronSuspension,
-		Description:  "Suspend or resume a CronWorkflow",
-		InputSchema:  sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"name\",\"suspend\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"suspend\":{\"type\":\"boolean\"}},\"additionalProperties\":false}"),
-		Name:         "toggle_cron_suspension",
-		OutputSchema: sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"status\",\"message\"],\"properties\":{\"confirmation_token\":{\"type\":\"string\"},\"instructions\":{\"type\":\"string\"},\"message\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"preview\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"},\"restart_successful\":{\"type\":\"boolean\"},\"status\":{\"type\":\"string\",\"description\":\"ok, dry_run, confirmation_required, or denied\"}},\"additionalProperties\":false}"),
-		Title:        "Toggle Cron Suspension",
-	}, adapter.sdkToolHandler(requestContext))
-	annotationsListWorkflowTemplates, err := sdkToolAnnotations(json.RawMessage([]byte("{\"readOnlyHint\":true}")))
+	bindings = append(bindings, sdkbridge.ToolBinding{
+		Handler: handler,
+		Tool: &mcpsdk.Tool{
+			Annotations:  annotationsToggleCronSuspension,
+			Description:  "Suspend or resume a CronWorkflow",
+			InputSchema:  sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"name\",\"suspend\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"suspend\":{\"type\":\"boolean\"}},\"additionalProperties\":false}"),
+			Name:         "toggle_cron_suspension",
+			OutputSchema: sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"status\",\"message\"],\"properties\":{\"confirmation_token\":{\"type\":\"string\"},\"instructions\":{\"type\":\"string\"},\"message\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"preview\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"},\"restart_successful\":{\"type\":\"boolean\"},\"status\":{\"type\":\"string\",\"description\":\"ok, dry_run, confirmation_required, or denied\"}},\"additionalProperties\":false}"),
+			Title:        "Toggle Cron Suspension",
+		},
+	})
+	annotationsListWorkflowTemplates, err := sdkToolAnnotations(jsontext.Value([]byte("{\"readOnlyHint\":true}")))
 	if err != nil {
-		return fmt.Errorf("tool %q annotations: %w", "list_workflow_templates", err)
+		return nil, fmt.Errorf("tool %q annotations: %w", "list_workflow_templates", err)
 	}
-	server.AddTool(&mcpsdk.Tool{
-		Annotations:  annotationsListWorkflowTemplates,
-		Description:  "List WorkflowTemplates in namespace",
-		InputSchema:  sdkToolInputSchema("{\"type\":\"object\",\"properties\":{\"label_selector\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
-		Name:         "list_workflow_templates",
-		OutputSchema: sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"templates\",\"count\",\"source\"],\"properties\":{\"count\":{\"type\":\"integer\"},\"label_selector\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"},\"templates\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"entrypoint\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}}},\"additionalProperties\":false}"),
-		Title:        "List Workflow Templates",
-	}, adapter.sdkToolHandler(requestContext))
-	annotationsGetWorkflowTemplate, err := sdkToolAnnotations(json.RawMessage([]byte("{\"readOnlyHint\":true}")))
+	bindings = append(bindings, sdkbridge.ToolBinding{
+		Handler: handler,
+		Tool: &mcpsdk.Tool{
+			Annotations:  annotationsListWorkflowTemplates,
+			Description:  "List WorkflowTemplates in namespace",
+			InputSchema:  sdkToolInputSchema("{\"type\":\"object\",\"properties\":{\"label_selector\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
+			Name:         "list_workflow_templates",
+			OutputSchema: sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"templates\",\"count\",\"source\"],\"properties\":{\"count\":{\"type\":\"integer\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"label_selector\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"},\"templates\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"entrypoint\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}}},\"additionalProperties\":false}"),
+			Title:        "List Workflow Templates",
+		},
+	})
+	annotationsGetWorkflowTemplate, err := sdkToolAnnotations(jsontext.Value([]byte("{\"readOnlyHint\":true}")))
 	if err != nil {
-		return fmt.Errorf("tool %q annotations: %w", "get_workflow_template", err)
+		return nil, fmt.Errorf("tool %q annotations: %w", "get_workflow_template", err)
 	}
-	server.AddTool(&mcpsdk.Tool{
-		Annotations:  annotationsGetWorkflowTemplate,
-		Description:  "Get WorkflowTemplate details",
-		InputSchema:  sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
-		Name:         "get_workflow_template",
-		OutputSchema: sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"name\",\"source\"],\"properties\":{\"entrypoint\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"},\"template_names\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}},\"additionalProperties\":false}"),
-		Title:        "Get Workflow Template",
-	}, adapter.sdkToolHandler(requestContext))
-	annotationsListClusterWorkflowTemplates, err := sdkToolAnnotations(json.RawMessage([]byte("{\"readOnlyHint\":true}")))
+	bindings = append(bindings, sdkbridge.ToolBinding{
+		Handler: handler,
+		Tool: &mcpsdk.Tool{
+			Annotations:  annotationsGetWorkflowTemplate,
+			Description:  "Get WorkflowTemplate details",
+			InputSchema:  sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
+			Name:         "get_workflow_template",
+			OutputSchema: sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"name\",\"source\"],\"properties\":{\"entrypoint\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"},\"template_names\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}},\"additionalProperties\":false}"),
+			Title:        "Get Workflow Template",
+		},
+	})
+	annotationsListClusterWorkflowTemplates, err := sdkToolAnnotations(jsontext.Value([]byte("{\"readOnlyHint\":true}")))
 	if err != nil {
-		return fmt.Errorf("tool %q annotations: %w", "list_cluster_workflow_templates", err)
+		return nil, fmt.Errorf("tool %q annotations: %w", "list_cluster_workflow_templates", err)
 	}
-	server.AddTool(&mcpsdk.Tool{
-		Annotations:  annotationsListClusterWorkflowTemplates,
-		Description:  "List ClusterWorkflowTemplates (cluster-scoped)",
-		InputSchema:  sdkToolInputSchema("{\"type\":\"object\",\"properties\":{\"label_selector\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
-		Name:         "list_cluster_workflow_templates",
-		OutputSchema: sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"templates\",\"count\",\"source\"],\"properties\":{\"count\":{\"type\":\"integer\"},\"label_selector\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"},\"templates\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"entrypoint\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"}},\"additionalProperties\":false}}},\"additionalProperties\":false}"),
-		Title:        "List Cluster Workflow Templates",
-	}, adapter.sdkToolHandler(requestContext))
-	annotationsGetClusterWorkflowTemplate, err := sdkToolAnnotations(json.RawMessage([]byte("{\"readOnlyHint\":true}")))
+	bindings = append(bindings, sdkbridge.ToolBinding{
+		Handler: handler,
+		Tool: &mcpsdk.Tool{
+			Annotations:  annotationsListClusterWorkflowTemplates,
+			Description:  "List ClusterWorkflowTemplates (cluster-scoped)",
+			InputSchema:  sdkToolInputSchema("{\"type\":\"object\",\"properties\":{\"label_selector\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
+			Name:         "list_cluster_workflow_templates",
+			OutputSchema: sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"templates\",\"count\",\"source\"],\"properties\":{\"count\":{\"type\":\"integer\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"label_selector\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"},\"templates\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"entrypoint\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"}},\"additionalProperties\":false}}},\"additionalProperties\":false}"),
+			Title:        "List Cluster Workflow Templates",
+		},
+	})
+	annotationsGetClusterWorkflowTemplate, err := sdkToolAnnotations(jsontext.Value([]byte("{\"readOnlyHint\":true}")))
 	if err != nil {
-		return fmt.Errorf("tool %q annotations: %w", "get_cluster_workflow_template", err)
+		return nil, fmt.Errorf("tool %q annotations: %w", "get_cluster_workflow_template", err)
 	}
-	server.AddTool(&mcpsdk.Tool{
-		Annotations:  annotationsGetClusterWorkflowTemplate,
-		Description:  "Get ClusterWorkflowTemplate details",
-		InputSchema:  sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
-		Name:         "get_cluster_workflow_template",
-		OutputSchema: sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"name\",\"source\"],\"properties\":{\"entrypoint\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"},\"template_names\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}},\"additionalProperties\":false}"),
-		Title:        "Get Cluster Workflow Template",
-	}, adapter.sdkToolHandler(requestContext))
-	return nil
+	bindings = append(bindings, sdkbridge.ToolBinding{
+		Handler: handler,
+		Tool: &mcpsdk.Tool{
+			Annotations:  annotationsGetClusterWorkflowTemplate,
+			Description:  "Get ClusterWorkflowTemplate details",
+			InputSchema:  sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
+			Name:         "get_cluster_workflow_template",
+			OutputSchema: sdkToolInputSchema("{\"type\":\"object\",\"required\":[\"name\",\"source\"],\"properties\":{\"entrypoint\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"},\"template_names\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}},\"additionalProperties\":false}"),
+			Title:        "Get Cluster Workflow Template",
+		},
+	})
+	return bindings, nil
 }
-func registerSDKResources(server *mcpsdk.Server, adapter *MCPAdapter, requestContext func(context.Context, *http.Request) context.Context) error {
-	return nil
+func sdkResourceBindings(adapter *MCPAdapter) ([]sdkbridge.ResourceBinding, error) {
+	return nil, nil
 }
-func registerSDKPrompts(server *mcpsdk.Server, adapter *MCPAdapter, requestContext func(context.Context, *http.Request) context.Context) error {
-	return nil
+func sdkPromptBindings(adapter *MCPAdapter) ([]sdkbridge.PromptBinding, error) {
+	return nil, nil
 }
 func sdkToolAnnotations(raw any) (*mcpsdk.ToolAnnotations, error) {
 	if raw == nil {
@@ -408,9 +339,9 @@ func sdkToolAnnotations(raw any) (*mcpsdk.ToolAnnotations, error) {
 }
 func sdkToolInputSchema(raw string) any {
 	if raw == "" {
-		return json.RawMessage("{\"type\":\"object\"}")
+		return jsontext.Value("{\"type\":\"object\"}")
 	}
-	return json.RawMessage([]byte(raw))
+	return jsontext.Value([]byte(raw))
 }
 func sdkToolFromToolInfo(tool *ToolInfo) (*mcpsdk.Tool, error) {
 	if tool == nil {
@@ -420,11 +351,15 @@ func sdkToolFromToolInfo(tool *ToolInfo) (*mcpsdk.Tool, error) {
 	if err != nil {
 		return nil, err
 	}
+	meta, err := sdkMeta(tool.Meta)
+	if err != nil {
+		return nil, err
+	}
 	sdkTool := &mcpsdk.Tool{
 		Annotations:  annotations,
 		Description:  derefString(tool.Description),
 		InputSchema:  tool.InputSchema,
-		Meta:         sdkMeta(tool.Meta),
+		Meta:         meta,
 		Name:         tool.Name,
 		OutputSchema: tool.OutputSchema,
 		Title:        derefString(tool.Title),
@@ -443,85 +378,25 @@ func sdkToolFromToolInfo(tool *ToolInfo) (*mcpsdk.Tool, error) {
 	}
 	return sdkTool, nil
 }
-func (a *MCPAdapter) sdkToolHandler(requestContext func(context.Context, *http.Request) context.Context) mcpsdk.ToolHandler {
-	return func(ctx context.Context, req *mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
-		payload := &ToolsCallPayload{}
-		var inputResponses mcpsdk.InputResponseMap
-		requestState := ""
-		if req != nil && req.Params != nil {
-			payload.Name = req.Params.Name
-			payload.Arguments = mcpJSONFromRaw(req.Params.Arguments)
-			inputResponses = req.Params.InputResponses
-			requestState = req.Params.RequestState
+func (a *MCPAdapter) sdkHandlerContext() sdkbridge.HandlerContext {
+	return sdkbridge.HandlerContext{
+		RequestStateKey: a.requestStateKey,
+		Sessions:        a.sessions,
+	}
+}
+func (a *MCPAdapter) sdkToolHandler() mcpsdk.ToolHandler {
+	return sdkbridge.ToolHandler(a.sdkHandlerContext(), func(ctx context.Context, request sdkbridge.ToolRequest) (*mcpsdk.CallToolResult, error) {
+		payload := &ToolsCallPayload{
+			Arguments: mcpJSONFromRaw(request.Arguments),
+			Name:      request.Name,
 		}
-		ctx = a.sdkRequestContext(ctx, req.GetSession(), req.GetExtra(), requestContext, inputResponses, requestState, "tools/call", payload)
-		if req != nil && req.Params != nil {
-			ctx = mcpruntime.WithProgressToken(ctx, req.Params.GetProgressToken())
-		}
+		ctx = request.Bind(payload)
 		result, err := a.ToolsCall(ctx, payload)
 		if err != nil {
-			if requests, state, ok := sdkclient.InputRequired(err); ok {
-				return &mcpsdk.CallToolResult{
-					InputRequests: requests,
-					RequestState:  state,
-				}, nil
-			}
 			return nil, err
 		}
 		return sdkCallToolResult(result)
-	}
-}
-func (a *MCPAdapter) sdkRequestContext(ctx context.Context, session mcpsdk.Session, extra *mcpsdk.RequestExtra, requestContext func(context.Context, *http.Request) context.Context, inputResponses mcpsdk.InputResponseMap, requestState string, requestMethod string, requestParams any) context.Context {
-	if requestContext != nil {
-		ctx = requestContext(ctx, sdkSyntheticHTTPRequest(ctx, extra))
-	}
-	if session == nil {
-		a.markInitializedSession("")
-		return ctx
-	}
-	ctx = sdkContextWithClientFeatures(ctx, session, inputResponses, requestState, a.requestStateKey, requestMethod, requestParams)
-	sessionID := session.ID()
-	if sessionID == "" {
-		a.markInitializedSession("")
-		return ctx
-	}
-	a.markInitializedSession(sessionID)
-	return mcpruntime.WithSessionID(ctx, sessionID)
-}
-func sdkContextWithClientFeatures(ctx context.Context, session mcpsdk.Session, inputResponses mcpsdk.InputResponseMap, requestState string, requestStateKey []byte, requestMethod string, requestParams any) context.Context {
-	serverSession, ok := session.(*mcpsdk.ServerSession)
-	if !ok || serverSession == nil {
-		return ctx
-	}
-	return sdkclient.WithClientFeatures(ctx, serverSession, sdkclient.ClientFeaturesOptions{
-		InputResponses:  inputResponses,
-		RequestMethod:   requestMethod,
-		RequestParams:   requestParams,
-		RequestState:    requestState,
-		RequestStateKey: requestStateKey,
 	})
-}
-func sdkSyntheticHTTPRequest(ctx context.Context, extra *mcpsdk.RequestExtra) *http.Request {
-	req := &http.Request{
-		Header: make(http.Header),
-		Method: http.MethodPost,
-		URL:    &url.URL{Path: "/mcp"},
-	}
-	for key, values := range mcpruntime.RequestHeadersFromContext(ctx) {
-		req.Header.Del(key)
-		for _, value := range values {
-			req.Header.Add(key, value)
-		}
-	}
-	if extra != nil && extra.Header != nil {
-		for key, values := range extra.Header {
-			req.Header.Del(key)
-			for _, value := range values {
-				req.Header.Add(key, value)
-			}
-		}
-	}
-	return req
 }
 func sdkCallToolResult(result *ToolsCallResult) (*mcpsdk.CallToolResult, error) {
 	if result == nil {
@@ -552,9 +427,16 @@ func sdkContentFromItem(item *ContentItem) (mcpsdk.Content, error) {
 	if item == nil {
 		return &mcpsdk.TextContent{}, nil
 	}
+	meta, err := sdkMeta(item.Meta)
+	if err != nil {
+		return nil, err
+	}
 	switch item.Type {
 	case "text":
-		return &mcpsdk.TextContent{Text: derefString(item.Text)}, nil
+		return &mcpsdk.TextContent{
+			Meta: meta,
+			Text: derefString(item.Text),
+		}, nil
 	case "image":
 		data, err := sdkDecodeBase64(item.Data)
 		if err != nil {
@@ -563,6 +445,7 @@ func sdkContentFromItem(item *ContentItem) (mcpsdk.Content, error) {
 		return &mcpsdk.ImageContent{
 			Data:     data,
 			MIMEType: derefString(item.MimeType),
+			Meta:     meta,
 		}, nil
 	case "audio":
 		data, err := sdkDecodeBase64(item.Data)
@@ -572,27 +455,35 @@ func sdkContentFromItem(item *ContentItem) (mcpsdk.Content, error) {
 		return &mcpsdk.AudioContent{
 			Data:     data,
 			MIMEType: derefString(item.MimeType),
+			Meta:     meta,
 		}, nil
 	case "resource":
-		resource, err := sdkResourceContents(item)
+		resource, err := sdkResourceContents(item, meta)
 		if err != nil {
 			return nil, err
 		}
-		return &mcpsdk.EmbeddedResource{Resource: resource}, nil
+		return &mcpsdk.EmbeddedResource{
+			Meta:     meta,
+			Resource: resource,
+		}, nil
 	default:
 		if item.URI != nil {
-			resource, err := sdkResourceContents(item)
+			resource, err := sdkResourceContents(item, meta)
 			if err != nil {
 				return nil, err
 			}
-			return &mcpsdk.EmbeddedResource{Resource: resource}, nil
+			return &mcpsdk.EmbeddedResource{
+				Meta:     meta,
+				Resource: resource,
+			}, nil
 		}
 		return nil, fmt.Errorf("unsupported MCP content type %q", item.Type)
 	}
 }
-func sdkResourceContents(item *ContentItem) (*mcpsdk.ResourceContents, error) {
+func sdkResourceContents(item *ContentItem, meta mcpsdk.Meta) (*mcpsdk.ResourceContents, error) {
 	resource := &mcpsdk.ResourceContents{
 		MIMEType: derefString(item.MimeType),
+		Meta:     meta,
 		Text:     derefString(item.Text),
 		URI:      derefString(item.URI),
 	}
@@ -605,29 +496,8 @@ func sdkResourceContents(item *ContentItem) (*mcpsdk.ResourceContents, error) {
 	}
 	return resource, nil
 }
-func sdkMeta(value any) mcpsdk.Meta {
-	switch typed := value.(type) {
-	case nil:
-		return nil
-	case mcpsdk.Meta:
-		return typed
-	case map[string]any:
-		return mcpsdk.Meta(typed)
-	case json.RawMessage:
-		var meta map[string]any
-		if err := json.Unmarshal(typed, &meta); err != nil {
-			return nil
-		}
-		return mcpsdk.Meta(meta)
-	case []byte:
-		var meta map[string]any
-		if err := json.Unmarshal(typed, &meta); err != nil {
-			return nil
-		}
-		return mcpsdk.Meta(meta)
-	default:
-		return nil
-	}
+func sdkMeta(value any) (mcpsdk.Meta, error) {
+	return sdkbridge.DecodeMeta(value)
 }
 func sdkDecodeBase64(raw *string) ([]byte, error) {
 	if raw == nil || *raw == "" {

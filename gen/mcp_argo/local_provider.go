@@ -10,13 +10,16 @@ package mcpargo
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	jsontext "encoding/json/jsontext"
+	json "encoding/json/v2"
 	"errors"
 	"strings"
 
 	"github.com/CaliLuke/loom-mcp/v2/runtime/agent/planner"
 	agentsruntime "github.com/CaliLuke/loom-mcp/v2/runtime/agent/runtime"
 	"github.com/CaliLuke/loom-mcp/v2/runtime/agent/tools"
+	mcpruntime "github.com/CaliLuke/loom-mcp/v2/runtime/mcp"
+	loom "github.com/CaliLuke/loom/pkg"
 )
 
 type localToolCallCollector struct {
@@ -64,8 +67,15 @@ func executeLocalProgressiveTool(ctx context.Context, adapter *MCPAdapter, call 
 	}
 	payload := &ToolsCallPayload{
 		Name:      toolName,
-		Arguments: mcpJSONFromRaw(append(json.RawMessage(nil), arguments...)),
+		Arguments: mcpJSONFromRaw(append(jsontext.Value(nil), arguments...)),
 	}
+	ctx = mcpruntime.WithProjectedToolCallMeta(ctx, agentsruntime.ToolCallMeta{
+		RunID:            call.RunID,
+		SessionID:        call.SessionID,
+		TurnID:           call.TurnID,
+		ToolCallID:       call.ToolCallID,
+		ParentToolCallID: call.ParentToolCallID,
+	})
 	response, err := adapter.executeLocalProgressiveTool(ctx, payload)
 	if err != nil {
 		return agentsruntime.Executed(&planner.ToolResult{
@@ -133,13 +143,25 @@ func localProgressiveToolSpecs(adapter *MCPAdapter) ([]tools.ToolSpec, error) {
 		if err != nil {
 			return nil, err
 		}
-		_, tags, _ := toolDiscoveryMetadata(tool)
+		_, discoveryTags, _ := toolDiscoveryMetadata(tool)
+		tags := tool.LocalTags
+		if len(tags) == 0 {
+			tags = discoveryTags
+		}
+		var meta map[string][]string
+		if len(tool.LocalMeta) > 0 {
+			meta = make(map[string][]string, len(tool.LocalMeta))
+			for key, values := range tool.LocalMeta {
+				meta[key] = append([]string(nil), values...)
+			}
+		}
 		specs = append(specs, tools.ToolSpec{
 			Name:        tools.Ident(tool.Name),
 			Service:     "argo",
 			Toolset:     "argo.go-argo-mcp",
 			Description: description,
 			Tags:        append([]string(nil), tags...),
+			Meta:        meta,
 			Payload: tools.TypeSpec{
 				Name:         "any",
 				Schema:       append([]byte(nil), toolRawJSON(tool.InputSchema)...),
@@ -176,11 +198,7 @@ func localPlannerToolResult(call *planner.ToolRequest, response *ToolsCallResult
 		return nil, err
 	}
 	if len(structuredContent) > 0 {
-		var structured any
-		if err := json.Unmarshal(structuredContent, &structured); err != nil {
-			return nil, err
-		}
-		result.Result = structured
+		result.Result = loom.JSONValue(structuredContent)
 		return result, nil
 	}
 	if text != "" {
@@ -232,7 +250,7 @@ func (c *localToolCallCollector) result() (*ToolsCallResult, error) {
 			continue
 		}
 		merged.Content = append(merged.Content, part.Content...)
-		if part.StructuredContent.Present() {
+		if mcpJSONPresent(part.StructuredContent) {
 			merged.StructuredContent = part.StructuredContent
 		}
 		if part.IsError != nil {

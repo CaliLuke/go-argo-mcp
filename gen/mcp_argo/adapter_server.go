@@ -10,22 +10,20 @@ package mcpargo
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	jsontext "encoding/json/jsontext"
+	json "encoding/json/v2"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"net/url"
 	"regexp"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	argo "github.com/CaliLuke/go-argo-mcp/gen/argo"
 	mcpruntime "github.com/CaliLuke/loom-mcp/v2/runtime/mcp"
+	sdkbridge "github.com/CaliLuke/loom-mcp/v2/runtime/mcp/sdkbridge"
 	loom "github.com/CaliLuke/loom/pkg"
-	mcpauth "github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/sahilm/fuzzy"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -36,33 +34,18 @@ import (
 
 // MCPAdapter core: types, options, constructor, helpers
 type MCPAdapter struct {
-	service             argo.Service
-	initialized         bool
-	initializedSessions map[string]time.Time
-	sessionPrincipals   map[string]string
-	mu                  sync.RWMutex
-	opts                *MCPAdapterOptions
-	tracer              trace.Tracer
-	callCounter         metric.Int64Counter
-	errorCounter        metric.Int64Counter
-	durationHistogram   metric.Float64Histogram
+	service           argo.Service
+	sessions          *sdkbridge.SessionState
+	opts              *MCPAdapterOptions
+	tracer            trace.Tracer
+	callCounter       metric.Int64Counter
+	errorCounter      metric.Int64Counter
+	durationHistogram metric.Float64Histogram
 	// requestStateKey encrypts and authenticates portable MCP multi-round-trip state.
 	requestStateKey []byte
-	// resourceNameToURI holds DSL-derived mapping for policy and lookups
-	resourceNameToURI map[string]string
 }
 
-const (
-	mcpSessionTTL  = 24 * time.Hour
-	mcpMaxSessions = 4096
-)
-
 var _ Service = (*MCPAdapter)(nil)
-var (
-	errInvalidSessionID               = errors.New("invalid session ID")
-	errSessionPrincipalBindingMissing = errors.New("session principal binding missing")
-	errSessionPrincipalMismatch       = errors.New("session user mismatch")
-)
 
 type (
 	toolCallStream interface {
@@ -73,44 +56,14 @@ type (
 	toolCallStreamHandler func(ctx context.Context, payload *ToolsCallPayload, stream toolCallStream) (bool, error)
 
 	// ToolCallInterceptorInfo describes a generated MCP tools/call invocation.
-	ToolCallInterceptorInfo interface {
-		loom.InterceptorInfo
-		Tool() string
-		RawArguments() json.RawMessage
-	}
+	ToolCallInterceptorInfo = sdkbridge.ToolCallInterceptorInfo
 
-	// ToolCallHandler is the generated MCP tool-call dispatcher.
-	ToolCallHandler func(ctx context.Context, payload *ToolsCallPayload) (*ToolsCallResult, error)
+	// ToolCallHandler is the typed MCP tool-call dispatcher.
+	ToolCallHandler = sdkbridge.TypedHandler[*ToolsCallPayload, *ToolsCallResult]
 
-	// ToolCallInterceptor wraps generated MCP tool execution.
-	ToolCallInterceptor func(ctx context.Context, info ToolCallInterceptorInfo, payload *ToolsCallPayload, next ToolCallHandler) (*ToolsCallResult, error)
+	// ToolCallInterceptor wraps typed MCP tool execution.
+	ToolCallInterceptor = sdkbridge.TypedInterceptor[*ToolsCallPayload, *ToolsCallResult]
 )
-type toolCallInterceptorInfo struct {
-	service    string
-	method     string
-	tool       string
-	rawPayload any
-	rawArgs    json.RawMessage
-}
-
-func (i *toolCallInterceptorInfo) Service() string {
-	return i.service
-}
-func (i *toolCallInterceptorInfo) Method() string {
-	return i.method
-}
-func (i *toolCallInterceptorInfo) Tool() string {
-	return i.tool
-}
-func (i *toolCallInterceptorInfo) CallType() loom.InterceptorCallType {
-	return loom.InterceptorUnary
-}
-func (i *toolCallInterceptorInfo) RawPayload() any {
-	return i.rawPayload
-}
-func (i *toolCallInterceptorInfo) RawArguments() json.RawMessage {
-	return i.rawArgs
-}
 
 // ToolSearchWeights customizes progressive discovery ranking weights. Zero values use generated defaults.
 type ToolSearchWeights struct {
@@ -142,8 +95,6 @@ type ToolSearchOptions struct {
 	SearchToolName string
 	// CallToolName overrides the synthetic call proxy tool name. Default: call_tool.
 	CallToolName string
-	// AllowDirectHiddenCalls permits direct tools/call for hidden real tools as a JSON-RPC compatibility option.
-	AllowDirectHiddenCalls bool
 }
 
 // MCPAdapterOptions allows customizing adapter behavior.
@@ -177,178 +128,34 @@ func NewMCPAdapter(service argo.Service, opts *MCPAdapterOptions) *MCPAdapter {
 	telemetryName := defaultMCPAdapterTelemetryName(opts)
 	tracer := defaultMCPAdapterTracer(opts, telemetryName)
 	callCounter, errorCounter, durationHistogram := defaultMCPAdapterMetrics(opts, telemetryName)
-	// Build name->URI map from generated resources
-	nameToURI := map[string]string{}
-	return &MCPAdapter{service: service, initializedSessions: make(map[string]time.Time), sessionPrincipals: make(map[string]string), opts: opts, tracer: tracer, callCounter: callCounter, errorCounter: errorCounter, durationHistogram: durationHistogram, resourceNameToURI: nameToURI}
+	var sessionPrincipal sdkbridge.PrincipalResolver
+	if opts != nil {
+		sessionPrincipal = opts.SessionPrincipal
+	}
+	adapter := &MCPAdapter{service: service, sessions: sdkbridge.NewSessionState(sessionPrincipal), opts: opts, tracer: tracer, callCounter: callCounter, errorCounter: errorCounter, durationHistogram: durationHistogram}
+	return adapter
 }
-func mcpJSONRaw(value loom.Nullable[any]) (json.RawMessage, error) {
-	if !value.Present() {
+func mcpJSONRaw(value loom.JSONValue) (jsontext.Value, error) {
+	trimmed := bytes.TrimSpace(value)
+	if len(trimmed) == 0 {
 		return nil, nil
 	}
-	if value.IsNull() {
-		return json.RawMessage("null"), nil
+	if !jsontext.Value(trimmed).IsValid() {
+		return nil, errors.New("invalid MCP JSON value")
 	}
-	actual, ok := value.Value()
-	if !ok {
-		return nil, errors.New("present MCP JSON value has no concrete value")
-	}
-	if raw, ok := actual.(json.RawMessage); ok {
-		return append(json.RawMessage(nil), raw...), nil
-	}
-	raw, err := json.Marshal(actual)
-	if err != nil {
-		return nil, err
-	}
-	return json.RawMessage(raw), nil
+	return append(jsontext.Value(nil), value...), nil
 }
-func mcpJSONFromRaw(raw json.RawMessage) loom.Nullable[any] {
-	trimmed := bytes.TrimSpace(raw)
-	if len(trimmed) == 0 {
-		return loom.Nullable[any]{}
-	}
-	if bytes.Equal(trimmed, []byte("null")) {
-		return loom.NullValue[any]()
-	}
-	copied := append(json.RawMessage(nil), raw...)
-	return loom.NullableValue[any](copied)
-}
-func mcpJSONAny(value loom.Nullable[any]) any {
-	if value.IsNull() {
+func mcpJSONFromRaw(raw jsontext.Value) loom.JSONValue {
+	if len(bytes.TrimSpace(raw)) == 0 {
 		return nil
 	}
-	actual, ok := value.Value()
-	if !ok {
-		return nil
-	}
-	return actual
+	return append(loom.JSONValue(nil), raw...)
 }
-
-// parseQueryParamsToJSON converts URI query params into JSON.
-func parseQueryParamsToJSON(uri string) ([]byte, error) {
-	u, err := url.Parse(uri)
-	if err != nil {
-		return nil, fmt.Errorf("invalid resource URI: %w", err)
-	}
-	q := u.Query()
-	if len(q) == 0 {
-		return []byte("{}"), nil
-	}
-	// Copy to plain map[string][]string to avoid depending on url.Values in helper
-	m := make(map[string][]string, len(q))
-	for k, v := range q {
-		m[k] = v
-	}
-	coerced := mcpruntime.CoerceQuery(m)
-	return json.Marshal(coerced)
-}
-func (a *MCPAdapter) pruneSessionsLocked(now time.Time, reserveSlot bool) {
-	for sessionID, touchedAt := range a.initializedSessions {
-		if now.Sub(touchedAt) >= mcpSessionTTL {
-			delete(a.initializedSessions, sessionID)
-			delete(a.sessionPrincipals, sessionID)
-		}
-	}
-	for len(a.initializedSessions) > mcpMaxSessions || reserveSlot && len(a.initializedSessions) >= mcpMaxSessions {
-		oldestID := ""
-		var oldestAt time.Time
-		for sessionID, touchedAt := range a.initializedSessions {
-			if oldestID == "" || touchedAt.Before(oldestAt) {
-				oldestID = sessionID
-				oldestAt = touchedAt
-			}
-		}
-		if oldestID == "" {
-			return
-		}
-		delete(a.initializedSessions, oldestID)
-		delete(a.sessionPrincipals, oldestID)
-	}
+func mcpJSONPresent(value loom.JSONValue) bool {
+	return len(bytes.TrimSpace(value)) > 0
 }
 func (a *MCPAdapter) isInitialized(ctx context.Context) bool {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	if sessionID := mcpruntime.SessionIDFromContext(ctx); sessionID != "" {
-		_, ok := a.initializedSessions[sessionID]
-		return ok
-	}
-	return a.initialized
-}
-func (a *MCPAdapter) markInitializedSession(sessionID string) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if sessionID == "" {
-		a.initialized = true
-		return
-	}
-	now := time.Now()
-	if _, ok := a.initializedSessions[sessionID]; !ok {
-		a.pruneSessionsLocked(now, true)
-	}
-	a.initializedSessions[sessionID] = now
-}
-func (a *MCPAdapter) captureSessionPrincipal(ctx context.Context, sessionID string) {
-	if a == nil || sessionID == "" {
-		return
-	}
-	principal := a.sessionPrincipal(ctx)
-	if principal == "" {
-		return
-	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if _, ok := a.initializedSessions[sessionID]; !ok {
-		return
-	}
-	if a.sessionPrincipals == nil {
-		a.sessionPrincipals = make(map[string]string)
-	}
-	if existing := strings.TrimSpace(a.sessionPrincipals[sessionID]); existing != "" {
-		return
-	}
-	a.sessionPrincipals[sessionID] = principal
-}
-func (a *MCPAdapter) clearSession(sessionID string) {
-	if a == nil || sessionID == "" {
-		return
-	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	delete(a.initializedSessions, sessionID)
-	delete(a.sessionPrincipals, sessionID)
-}
-func (a *MCPAdapter) assertSessionPrincipal(ctx context.Context, sessionID string) error {
-	if a == nil || sessionID == "" {
-		return nil
-	}
-	actual := a.sessionPrincipal(ctx)
-	principalRequired := a.opts != nil && a.opts.SessionPrincipal != nil
-	a.mu.Lock()
-	a.pruneSessionsLocked(time.Now(), false)
-	_, initialized := a.initializedSessions[sessionID]
-	expected := strings.TrimSpace(a.sessionPrincipals[sessionID])
-	a.mu.Unlock()
-	if !initialized {
-		return errInvalidSessionID
-	}
-	if expected == "" {
-		if principalRequired || actual != "" {
-			return errSessionPrincipalBindingMissing
-		}
-		return nil
-	}
-	if actual == "" || actual != expected {
-		return errSessionPrincipalMismatch
-	}
-	return nil
-}
-func (a *MCPAdapter) sessionPrincipal(ctx context.Context) string {
-	if a != nil && a.opts != nil && a.opts.SessionPrincipal != nil {
-		return strings.TrimSpace(a.opts.SessionPrincipal(ctx))
-	}
-	if tokenInfo := mcpauth.TokenInfoFromContext(ctx); tokenInfo != nil {
-		return strings.TrimSpace(tokenInfo.UserID)
-	}
-	return ""
+	return a != nil && a.sessions.IsInitialized(ctx)
 }
 func (a *MCPAdapter) log(ctx context.Context, event string, details any) {
 	if a != nil && a.opts != nil && a.opts.Logger != nil {
@@ -363,34 +170,18 @@ func (a *MCPAdapter) mapError(err error) error {
 	}
 	return err
 }
-func (a *MCPAdapter) toolCallInfo(p *ToolsCallPayload, rawArgs json.RawMessage) ToolCallInterceptorInfo {
-	info := &toolCallInterceptorInfo{
-		method:     "tools/call",
-		rawPayload: p,
-		service:    "argo",
-	}
+func (a *MCPAdapter) toolCallInfo(p *ToolsCallPayload, rawArgs jsontext.Value) ToolCallInterceptorInfo {
+	tool := ""
 	if p != nil {
-		info.tool = p.Name
-		info.rawArgs = rawArgs
+		tool = p.Name
 	}
-	return info
+	return sdkbridge.NewToolCallInfo("argo", tool, p, rawArgs)
 }
 func (a *MCPAdapter) wrapToolCallHandler(info ToolCallInterceptorInfo, next ToolCallHandler) ToolCallHandler {
-	if a == nil || a.opts == nil || len(a.opts.ToolCallInterceptors) == 0 {
+	if a == nil || a.opts == nil {
 		return next
 	}
-	wrapped := next
-	for i := len(a.opts.ToolCallInterceptors) - 1; i >= 0; i-- {
-		interceptor := a.opts.ToolCallInterceptors[i]
-		if interceptor == nil {
-			continue
-		}
-		currentNext := wrapped
-		wrapped = func(ctx context.Context, payload *ToolsCallPayload) (*ToolsCallResult, error) {
-			return interceptor(ctx, info, payload, currentNext)
-		}
-	}
-	return wrapped
+	return sdkbridge.WrapTypedHandler(a.opts.ToolCallInterceptors, info, next)
 }
 func defaultMCPAdapterTelemetryName(opts *MCPAdapterOptions) string {
 	if opts != nil && opts.TelemetryName != "" {
@@ -458,7 +249,7 @@ func stringPtr(s string) *string {
 	return &s
 }
 func isLikelyJSON(s string) bool {
-	return json.Valid([]byte(s))
+	return jsontext.Value(s).IsValid()
 }
 
 // buildContentItem returns a ContentItem honoring StructuredStreamJSON option.
@@ -536,7 +327,7 @@ func formatToolErrorText(err error) string {
 	return fmt.Sprintf("[%s] %s\nRecovery: %s", code, message, recovery)
 }
 func (a *MCPAdapter) safeMCPError(err error, defaultCode string, fallbackMessage string) error {
-	if mcpruntime.IsInputRequired(err) {
+	if mcpruntime.IsInputRequired(err) || mcpruntime.IsInvalidClientInput(err) {
 		return err
 	}
 	if err == nil {
@@ -620,14 +411,16 @@ type Icon struct {
 	Theme    *string  `json:"theme,omitempty"`
 }
 type ToolInfo struct {
-	Name         string  `json:"name"`
-	Title        *string `json:"title,omitempty"`
-	Description  *string `json:"description,omitempty"`
-	InputSchema  any     `json:"inputSchema,omitempty"`
-	OutputSchema any     `json:"outputSchema,omitempty"`
-	Annotations  any     `json:"annotations,omitempty"`
-	Meta         any     `json:"_meta,omitempty"`
-	Icons        []*Icon `json:"icons,omitempty"`
+	Name         string              `json:"name"`
+	Title        *string             `json:"title,omitempty"`
+	Description  *string             `json:"description,omitempty"`
+	InputSchema  any                 `json:"inputSchema,omitempty"`
+	OutputSchema any                 `json:"outputSchema,omitempty"`
+	Annotations  any                 `json:"annotations,omitempty"`
+	Meta         any                 `json:"_meta,omitempty"`
+	Icons        []*Icon             `json:"icons,omitempty"`
+	LocalTags    []string            `json:"-"`
+	LocalMeta    map[string][]string `json:"-"`
 }
 type toolCallResultCollector struct {
 	adapter   *MCPAdapter
@@ -678,7 +471,7 @@ func (c *toolCallResultCollector) result() *ToolsCallResult {
 			continue
 		}
 		merged.Content = append(merged.Content, part.Content...)
-		if part.StructuredContent.Present() {
+		if mcpJSONPresent(part.StructuredContent) {
 			merged.StructuredContent = part.StructuredContent
 		}
 		if part.IsError != nil {
@@ -689,30 +482,19 @@ func (c *toolCallResultCollector) result() *ToolsCallResult {
 	return merged
 }
 func decodeMCPPayloadStrict(data []byte, payload any) error {
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(payload); err != nil {
-		return err
-	}
-	if err := dec.Decode(&struct{}{}); err != io.EOF {
-		if err == nil {
-			return fmt.Errorf("unexpected trailing JSON data")
-		}
-		return err
-	}
-	return nil
+	return json.Unmarshal(data, payload, json.RejectUnknownMembers(true))
 }
-func decodeMCPPayloadFields(data []byte) (map[string]json.RawMessage, error) {
-	var fields map[string]json.RawMessage
+func decodeMCPPayloadFields(data []byte) (map[string]jsontext.Value, error) {
+	var fields map[string]jsontext.Value
 	if err := json.Unmarshal(data, &fields); err != nil {
 		return nil, err
 	}
 	if fields == nil {
-		fields = make(map[string]json.RawMessage)
+		fields = make(map[string]jsontext.Value)
 	}
 	return fields, nil
 }
-func validateMCPPayloadRequired(fields map[string]json.RawMessage, field string) error {
+func validateMCPPayloadRequired(fields map[string]jsontext.Value, field string, allowsNull bool) error {
 	raw, ok := fields[field]
 	if !ok {
 		return loom.WithErrorRemedy(loom.PermanentError("invalid_params", "Missing required field: %s", field), &loom.ErrorRemedy{
@@ -720,8 +502,7 @@ func validateMCPPayloadRequired(fields map[string]json.RawMessage, field string)
 			SafeMessage: fmt.Sprintf("Missing required field: %s", field),
 		})
 	}
-	trimmed := bytes.TrimSpace(raw)
-	if bytes.Equal(trimmed, []byte("\"\"")) || bytes.Equal(trimmed, []byte("null")) {
+	if !allowsNull && bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 		return loom.WithErrorRemedy(loom.PermanentError("invalid_params", "Missing required field: %s", field), &loom.ErrorRemedy{
 			Code:        "invalid_params",
 			SafeMessage: fmt.Sprintf("Missing required field: %s", field),
@@ -729,7 +510,7 @@ func validateMCPPayloadRequired(fields map[string]json.RawMessage, field string)
 	}
 	return nil
 }
-func validateMCPPayloadEnum(fields map[string]json.RawMessage, field string, optional bool, allowed ...string) error {
+func validateMCPPayloadEnum(fields map[string]jsontext.Value, field string, optional bool, allowed ...string) error {
 	raw, ok := fields[field]
 	if !ok {
 		return nil
@@ -763,8 +544,8 @@ type toolSearchPayload struct {
 	Tags           []string `json:"tags,omitempty"`
 }
 type toolCallProxyPayload struct {
-	Name      string          `json:"name"`
-	Arguments json.RawMessage `json:"arguments,omitempty"`
+	Name      string         `json:"name"`
+	Arguments jsontext.Value `json:"arguments,omitempty"`
 }
 type toolSearchResult struct {
 	Tools        []toolSearchDescriptor `json:"tools"`
@@ -774,21 +555,21 @@ type toolSearchResult struct {
 	Pattern      string                 `json:"pattern,omitempty"`
 }
 type toolSearchDescriptor struct {
-	Name              string          `json:"name"`
-	Title             string          `json:"title,omitempty"`
-	Description       string          `json:"description,omitempty"`
-	InputSchema       json.RawMessage `json:"inputSchema,omitempty"`
-	OutputSchema      json.RawMessage `json:"outputSchema,omitempty"`
-	Annotations       json.RawMessage `json:"annotations,omitempty"`
-	Meta              json.RawMessage `json:"_meta,omitempty"`
-	Icons             []*Icon         `json:"icons,omitempty"`
-	Category          string          `json:"category,omitempty"`
-	Tags              []string        `json:"tags,omitempty"`
-	Keywords          []string        `json:"keywords,omitempty"`
-	WhyMatched        []string        `json:"why_matched,omitempty"`
-	CallToolName      string          `json:"call_tool_name,omitempty"`
-	CallToolArguments json.RawMessage `json:"call_tool_arguments,omitempty"`
-	CallToolJSON      string          `json:"call_tool_json,omitempty"`
+	Name              string         `json:"name"`
+	Title             string         `json:"title,omitempty"`
+	Description       string         `json:"description,omitempty"`
+	InputSchema       jsontext.Value `json:"inputSchema,omitempty"`
+	OutputSchema      jsontext.Value `json:"outputSchema,omitempty"`
+	Annotations       jsontext.Value `json:"annotations,omitempty"`
+	Meta              jsontext.Value `json:"_meta,omitempty"`
+	Icons             []*Icon        `json:"icons,omitempty"`
+	Category          string         `json:"category,omitempty"`
+	Tags              []string       `json:"tags,omitempty"`
+	Keywords          []string       `json:"keywords,omitempty"`
+	WhyMatched        []string       `json:"why_matched,omitempty"`
+	CallToolName      string         `json:"call_tool_name,omitempty"`
+	CallToolArguments jsontext.Value `json:"call_tool_arguments,omitempty"`
+	CallToolJSON      string         `json:"call_tool_json,omitempty"`
 }
 type toolSearchCandidate struct {
 	tool  *ToolInfo
@@ -811,95 +592,95 @@ type toolSearchSettings struct {
 
 func (a *MCPAdapter) generatedToolCatalog() []*ToolInfo {
 	return []*ToolInfo{&ToolInfo{
-		Annotations:  json.RawMessage([]byte("{\"readOnlyHint\":true}")),
+		Annotations:  jsontext.Value([]byte("{\"readOnlyHint\":true}")),
 		Description:  stringPtr("List workflows in specified namespace(s) with optional status filtering"),
-		InputSchema:  json.RawMessage([]byte("{\"type\":\"object\",\"properties\":{\"limit\":{\"type\":\"integer\",\"description\":\"Maximum number of workflows to return\",\"default\":50,\"minimum\":1},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace to query\"},\"status\":{\"type\":\"string\",\"description\":\"Optional workflow status filter\",\"enum\":[\"Running\",\"Succeeded\",\"Failed\",\"Pending\",\"Error\"]}},\"additionalProperties\":false}")),
+		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"properties\":{\"limit\":{\"type\":\"integer\",\"description\":\"Maximum number of workflows to return\",\"default\":50,\"minimum\":1,\"maximum\":9223372036854775807},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace to query\"},\"status\":{\"type\":\"string\",\"description\":\"Optional workflow status filter\",\"enum\":[\"Running\",\"Succeeded\",\"Failed\",\"Pending\",\"Error\"]}},\"additionalProperties\":false}")),
 		Name:         "list_workflows",
-		OutputSchema: json.RawMessage([]byte("{\"type\":\"object\",\"required\":[\"workflows\",\"count\",\"source\"],\"properties\":{\"count\":{\"type\":\"integer\"},\"namespace\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"workflows\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"description\":\"Workflow summary returned by Argo.\",\"required\":[\"name\",\"namespace\",\"status\"],\"properties\":{\"duration\":{\"type\":\"string\",\"description\":\"Elapsed workflow duration\"},\"finished_at\":{\"type\":\"string\",\"description\":\"RFC3339 finish timestamp\"},\"name\":{\"type\":\"string\",\"description\":\"Workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace\"},\"progress\":{\"type\":\"string\",\"description\":\"Completed nodes over total nodes\"},\"started_at\":{\"type\":\"string\",\"description\":\"RFC3339 start timestamp\"},\"status\":{\"type\":\"string\",\"description\":\"Workflow phase or status\"}},\"additionalProperties\":false}}},\"additionalProperties\":false}")),
+		OutputSchema: jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"workflows\",\"count\",\"source\"],\"properties\":{\"count\":{\"type\":\"integer\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"namespace\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"workflows\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"description\":\"Workflow summary returned by Argo.\",\"required\":[\"name\",\"namespace\",\"status\"],\"properties\":{\"duration\":{\"type\":\"string\",\"description\":\"Elapsed workflow duration\"},\"finished_at\":{\"type\":\"string\",\"description\":\"RFC3339 finish timestamp\"},\"name\":{\"type\":\"string\",\"description\":\"Workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace\"},\"progress\":{\"type\":\"string\",\"description\":\"Completed nodes over total nodes\"},\"started_at\":{\"type\":\"string\",\"description\":\"RFC3339 start timestamp\"},\"status\":{\"type\":\"string\",\"description\":\"Workflow phase or status\"}},\"additionalProperties\":false}}},\"additionalProperties\":false}")),
 		Title:        stringPtr("List Workflows"),
 	}, &ToolInfo{
-		Annotations:  json.RawMessage([]byte("{\"readOnlyHint\":true}")),
+		Annotations:  jsontext.Value([]byte("{\"readOnlyHint\":true}")),
 		Description:  stringPtr("Get detailed information about a specific workflow"),
-		InputSchema:  json.RawMessage([]byte("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}")),
+		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}")),
 		Name:         "get_workflow",
-		OutputSchema: json.RawMessage([]byte("{\"type\":\"object\",\"required\":[\"name\",\"namespace\",\"status\"],\"properties\":{\"annotations\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"}},\"duration\":{\"type\":\"string\"},\"finished_at\":{\"type\":\"string\"},\"labels\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"}},\"message\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"outputs\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"}},\"parameters\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"}},\"progress\":{\"type\":\"string\"},\"started_at\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"}},\"additionalProperties\":false}")),
+		OutputSchema: jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"name\",\"namespace\",\"status\"],\"properties\":{\"annotations\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"}},\"duration\":{\"type\":\"string\"},\"finished_at\":{\"type\":\"string\"},\"labels\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"}},\"message\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"outputs\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"}},\"parameters\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"}},\"progress\":{\"type\":\"string\"},\"started_at\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"}},\"additionalProperties\":false}")),
 		Title:        stringPtr("Get Workflow"),
 	}, &ToolInfo{
-		Annotations:  json.RawMessage([]byte("{\"readOnlyHint\":true}")),
+		Annotations:  jsontext.Value([]byte("{\"readOnlyHint\":true}")),
 		Description:  stringPtr("Get logs from a workflow's pods"),
-		InputSchema:  json.RawMessage([]byte("{\"type\":\"object\",\"required\":[\"workflow_name\"],\"properties\":{\"container\":{\"type\":\"string\",\"default\":\"main\"},\"max_lines\":{\"type\":\"integer\",\"description\":\"Maximum lines to return; zero returns all lines\",\"default\":200,\"minimum\":0},\"namespace\":{\"type\":\"string\"},\"pod_name\":{\"type\":\"string\"},\"search\":{\"type\":\"string\"},\"workflow_name\":{\"type\":\"string\"}},\"additionalProperties\":false}")),
+		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"workflow_name\"],\"properties\":{\"container\":{\"type\":\"string\",\"default\":\"main\"},\"max_lines\":{\"type\":\"integer\",\"description\":\"Maximum lines to return; zero returns all lines\",\"default\":200,\"minimum\":0,\"maximum\":9223372036854775807},\"namespace\":{\"type\":\"string\"},\"pod_name\":{\"type\":\"string\"},\"search\":{\"type\":\"string\"},\"workflow_name\":{\"type\":\"string\"}},\"additionalProperties\":false}")),
 		Name:         "get_workflow_logs",
-		OutputSchema: json.RawMessage([]byte("{\"type\":\"object\",\"required\":[\"namespace\",\"workflow\",\"container\",\"total_lines\",\"matching_lines\",\"returned_lines\",\"logs\"],\"properties\":{\"container\":{\"type\":\"string\"},\"logs\":{\"type\":\"string\"},\"matching_lines\":{\"type\":\"integer\"},\"max_lines\":{\"type\":\"integer\"},\"namespace\":{\"type\":\"string\"},\"note\":{\"type\":\"string\"},\"pod\":{\"type\":\"string\"},\"returned_lines\":{\"type\":\"integer\"},\"search_term\":{\"type\":\"string\"},\"total_lines\":{\"type\":\"integer\"},\"workflow\":{\"type\":\"string\"}},\"additionalProperties\":false}")),
+		OutputSchema: jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"namespace\",\"workflow\",\"container\",\"total_lines\",\"matching_lines\",\"returned_lines\",\"logs\"],\"properties\":{\"container\":{\"type\":\"string\"},\"logs\":{\"type\":\"string\"},\"matching_lines\":{\"type\":\"integer\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"max_lines\":{\"type\":\"integer\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"namespace\":{\"type\":\"string\"},\"note\":{\"type\":\"string\"},\"pod\":{\"type\":\"string\"},\"returned_lines\":{\"type\":\"integer\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"search_term\":{\"type\":\"string\"},\"total_lines\":{\"type\":\"integer\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"workflow\":{\"type\":\"string\"}},\"additionalProperties\":false}")),
 		Title:        stringPtr("Get Workflow Logs"),
 	}, &ToolInfo{
-		Annotations:  json.RawMessage([]byte("{\"destructiveHint\":true}")),
+		Annotations:  jsontext.Value([]byte("{\"destructiveHint\":true}")),
 		Description:  stringPtr("Terminate a running workflow (DESTRUCTIVE - requires confirmation)"),
-		InputSchema:  json.RawMessage([]byte("{\"type\":\"object\",\"required\":[\"name\",\"reason\"],\"properties\":{\"confirmation_token\":{\"type\":\"string\"},\"dry_run\":{\"type\":\"boolean\",\"description\":\"Preview mode; defaults to true\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"}},\"additionalProperties\":false}")),
+		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"name\",\"reason\"],\"properties\":{\"confirmation_token\":{\"type\":\"string\"},\"dry_run\":{\"type\":\"boolean\",\"description\":\"Preview mode; defaults to true\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"}},\"additionalProperties\":false}")),
 		Name:         "terminate_workflow",
-		OutputSchema: json.RawMessage([]byte("{\"type\":\"object\",\"required\":[\"status\",\"message\"],\"properties\":{\"confirmation_token\":{\"type\":\"string\"},\"instructions\":{\"type\":\"string\"},\"message\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"preview\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"},\"restart_successful\":{\"type\":\"boolean\"},\"status\":{\"type\":\"string\",\"description\":\"ok, dry_run, confirmation_required, or denied\"}},\"additionalProperties\":false}")),
+		OutputSchema: jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"status\",\"message\"],\"properties\":{\"confirmation_token\":{\"type\":\"string\"},\"instructions\":{\"type\":\"string\"},\"message\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"preview\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"},\"restart_successful\":{\"type\":\"boolean\"},\"status\":{\"type\":\"string\",\"description\":\"ok, dry_run, confirmation_required, or denied\"}},\"additionalProperties\":false}")),
 		Title:        stringPtr("Terminate Workflow"),
 	}, &ToolInfo{
-		Annotations:  json.RawMessage([]byte("{\"destructiveHint\":true}")),
+		Annotations:  jsontext.Value([]byte("{\"destructiveHint\":true}")),
 		Description:  stringPtr("Retry a failed workflow"),
-		InputSchema:  json.RawMessage([]byte("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"restart_successful\":{\"type\":\"boolean\",\"description\":\"Also restart successful steps; defaults to false\"}},\"additionalProperties\":false}")),
+		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"restart_successful\":{\"type\":\"boolean\",\"description\":\"Also restart successful steps; defaults to false\"}},\"additionalProperties\":false}")),
 		Name:         "retry_workflow",
-		OutputSchema: json.RawMessage([]byte("{\"type\":\"object\",\"required\":[\"status\",\"message\"],\"properties\":{\"confirmation_token\":{\"type\":\"string\"},\"instructions\":{\"type\":\"string\"},\"message\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"preview\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"},\"restart_successful\":{\"type\":\"boolean\"},\"status\":{\"type\":\"string\",\"description\":\"ok, dry_run, confirmation_required, or denied\"}},\"additionalProperties\":false}")),
+		OutputSchema: jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"status\",\"message\"],\"properties\":{\"confirmation_token\":{\"type\":\"string\"},\"instructions\":{\"type\":\"string\"},\"message\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"preview\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"},\"restart_successful\":{\"type\":\"boolean\"},\"status\":{\"type\":\"string\",\"description\":\"ok, dry_run, confirmation_required, or denied\"}},\"additionalProperties\":false}")),
 		Title:        stringPtr("Retry Workflow"),
 	}, &ToolInfo{
-		Annotations:  json.RawMessage([]byte("{\"readOnlyHint\":true}")),
+		Annotations:  jsontext.Value([]byte("{\"readOnlyHint\":true}")),
 		Description:  stringPtr("List CronWorkflows in namespace(s)"),
-		InputSchema:  json.RawMessage([]byte("{\"type\":\"object\",\"properties\":{\"namespace\":{\"type\":\"string\"},\"suspended\":{\"type\":\"boolean\"}},\"additionalProperties\":false}")),
+		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"properties\":{\"namespace\":{\"type\":\"string\"},\"suspended\":{\"type\":\"boolean\"}},\"additionalProperties\":false}")),
 		Name:         "list_cron_workflows",
-		OutputSchema: json.RawMessage([]byte("{\"type\":\"object\",\"required\":[\"cron_workflows\",\"count\",\"source\"],\"properties\":{\"count\":{\"type\":\"integer\"},\"cron_workflows\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"name\",\"namespace\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"schedule\":{\"type\":\"string\"},\"suspended\":{\"type\":\"boolean\"}},\"additionalProperties\":false}},\"namespace\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"},\"suspended\":{\"type\":\"boolean\"}},\"additionalProperties\":false}")),
+		OutputSchema: jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"cron_workflows\",\"count\",\"source\"],\"properties\":{\"count\":{\"type\":\"integer\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"cron_workflows\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"name\",\"namespace\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"schedule\":{\"type\":\"string\"},\"suspended\":{\"type\":\"boolean\"}},\"additionalProperties\":false}},\"namespace\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"},\"suspended\":{\"type\":\"boolean\"}},\"additionalProperties\":false}")),
 		Title:        stringPtr("List Cron Workflows"),
 	}, &ToolInfo{
-		Annotations:  json.RawMessage([]byte("{\"readOnlyHint\":true}")),
+		Annotations:  jsontext.Value([]byte("{\"readOnlyHint\":true}")),
 		Description:  stringPtr("Get CronWorkflow details including schedule and last execution"),
-		InputSchema:  json.RawMessage([]byte("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}")),
+		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}")),
 		Name:         "get_cron_workflow",
-		OutputSchema: json.RawMessage([]byte("{\"type\":\"object\",\"required\":[\"name\",\"source\"],\"properties\":{\"last_scheduled_time\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"next_scheduled_time\":{\"type\":\"string\"},\"schedule\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"},\"suspended\":{\"type\":\"boolean\"}},\"additionalProperties\":false}")),
+		OutputSchema: jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"name\",\"source\"],\"properties\":{\"last_scheduled_time\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"next_scheduled_time\":{\"type\":\"string\"},\"schedule\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"},\"suspended\":{\"type\":\"boolean\"}},\"additionalProperties\":false}")),
 		Title:        stringPtr("Get Cron Workflow"),
 	}, &ToolInfo{
-		Annotations:  json.RawMessage([]byte("{\"readOnlyHint\":true}")),
+		Annotations:  jsontext.Value([]byte("{\"readOnlyHint\":true}")),
 		Description:  stringPtr("Get execution history of a CronWorkflow"),
-		InputSchema:  json.RawMessage([]byte("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"limit\":{\"type\":\"integer\",\"default\":10,\"minimum\":1},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}")),
+		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"limit\":{\"type\":\"integer\",\"default\":10,\"minimum\":1,\"maximum\":9223372036854775807},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}")),
 		Name:         "get_cron_history",
-		OutputSchema: json.RawMessage([]byte("{\"type\":\"object\",\"required\":[\"name\",\"history\",\"count\",\"source\"],\"properties\":{\"count\":{\"type\":\"integer\"},\"history\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"duration\":{\"type\":\"string\"},\"finished_at\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"started_at\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"}},\"additionalProperties\":false}},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"}},\"additionalProperties\":false}")),
+		OutputSchema: jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"name\",\"history\",\"count\",\"source\"],\"properties\":{\"count\":{\"type\":\"integer\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"history\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"duration\":{\"type\":\"string\"},\"finished_at\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"started_at\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"}},\"additionalProperties\":false}},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"}},\"additionalProperties\":false}")),
 		Title:        stringPtr("Get Cron History"),
 	}, &ToolInfo{
-		Annotations:  json.RawMessage([]byte("{\"destructiveHint\":true}")),
+		Annotations:  jsontext.Value([]byte("{\"destructiveHint\":true}")),
 		Description:  stringPtr("Suspend or resume a CronWorkflow"),
-		InputSchema:  json.RawMessage([]byte("{\"type\":\"object\",\"required\":[\"name\",\"suspend\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"suspend\":{\"type\":\"boolean\"}},\"additionalProperties\":false}")),
+		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"name\",\"suspend\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"suspend\":{\"type\":\"boolean\"}},\"additionalProperties\":false}")),
 		Name:         "toggle_cron_suspension",
-		OutputSchema: json.RawMessage([]byte("{\"type\":\"object\",\"required\":[\"status\",\"message\"],\"properties\":{\"confirmation_token\":{\"type\":\"string\"},\"instructions\":{\"type\":\"string\"},\"message\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"preview\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"},\"restart_successful\":{\"type\":\"boolean\"},\"status\":{\"type\":\"string\",\"description\":\"ok, dry_run, confirmation_required, or denied\"}},\"additionalProperties\":false}")),
+		OutputSchema: jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"status\",\"message\"],\"properties\":{\"confirmation_token\":{\"type\":\"string\"},\"instructions\":{\"type\":\"string\"},\"message\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"preview\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"},\"restart_successful\":{\"type\":\"boolean\"},\"status\":{\"type\":\"string\",\"description\":\"ok, dry_run, confirmation_required, or denied\"}},\"additionalProperties\":false}")),
 		Title:        stringPtr("Toggle Cron Suspension"),
 	}, &ToolInfo{
-		Annotations:  json.RawMessage([]byte("{\"readOnlyHint\":true}")),
+		Annotations:  jsontext.Value([]byte("{\"readOnlyHint\":true}")),
 		Description:  stringPtr("List WorkflowTemplates in namespace"),
-		InputSchema:  json.RawMessage([]byte("{\"type\":\"object\",\"properties\":{\"label_selector\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}")),
+		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"properties\":{\"label_selector\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}")),
 		Name:         "list_workflow_templates",
-		OutputSchema: json.RawMessage([]byte("{\"type\":\"object\",\"required\":[\"templates\",\"count\",\"source\"],\"properties\":{\"count\":{\"type\":\"integer\"},\"label_selector\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"},\"templates\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"entrypoint\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}}},\"additionalProperties\":false}")),
+		OutputSchema: jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"templates\",\"count\",\"source\"],\"properties\":{\"count\":{\"type\":\"integer\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"label_selector\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"},\"templates\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"entrypoint\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}}},\"additionalProperties\":false}")),
 		Title:        stringPtr("List Workflow Templates"),
 	}, &ToolInfo{
-		Annotations:  json.RawMessage([]byte("{\"readOnlyHint\":true}")),
+		Annotations:  jsontext.Value([]byte("{\"readOnlyHint\":true}")),
 		Description:  stringPtr("Get WorkflowTemplate details"),
-		InputSchema:  json.RawMessage([]byte("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}")),
+		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}")),
 		Name:         "get_workflow_template",
-		OutputSchema: json.RawMessage([]byte("{\"type\":\"object\",\"required\":[\"name\",\"source\"],\"properties\":{\"entrypoint\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"},\"template_names\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}},\"additionalProperties\":false}")),
+		OutputSchema: jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"name\",\"source\"],\"properties\":{\"entrypoint\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"},\"template_names\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}},\"additionalProperties\":false}")),
 		Title:        stringPtr("Get Workflow Template"),
 	}, &ToolInfo{
-		Annotations:  json.RawMessage([]byte("{\"readOnlyHint\":true}")),
+		Annotations:  jsontext.Value([]byte("{\"readOnlyHint\":true}")),
 		Description:  stringPtr("List ClusterWorkflowTemplates (cluster-scoped)"),
-		InputSchema:  json.RawMessage([]byte("{\"type\":\"object\",\"properties\":{\"label_selector\":{\"type\":\"string\"}},\"additionalProperties\":false}")),
+		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"properties\":{\"label_selector\":{\"type\":\"string\"}},\"additionalProperties\":false}")),
 		Name:         "list_cluster_workflow_templates",
-		OutputSchema: json.RawMessage([]byte("{\"type\":\"object\",\"required\":[\"templates\",\"count\",\"source\"],\"properties\":{\"count\":{\"type\":\"integer\"},\"label_selector\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"},\"templates\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"entrypoint\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"}},\"additionalProperties\":false}}},\"additionalProperties\":false}")),
+		OutputSchema: jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"templates\",\"count\",\"source\"],\"properties\":{\"count\":{\"type\":\"integer\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"label_selector\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"},\"templates\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"entrypoint\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"}},\"additionalProperties\":false}}},\"additionalProperties\":false}")),
 		Title:        stringPtr("List Cluster Workflow Templates"),
 	}, &ToolInfo{
-		Annotations:  json.RawMessage([]byte("{\"readOnlyHint\":true}")),
+		Annotations:  jsontext.Value([]byte("{\"readOnlyHint\":true}")),
 		Description:  stringPtr("Get ClusterWorkflowTemplate details"),
-		InputSchema:  json.RawMessage([]byte("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"}},\"additionalProperties\":false}")),
+		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"}},\"additionalProperties\":false}")),
 		Name:         "get_cluster_workflow_template",
-		OutputSchema: json.RawMessage([]byte("{\"type\":\"object\",\"required\":[\"name\",\"source\"],\"properties\":{\"entrypoint\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"},\"template_names\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}},\"additionalProperties\":false}")),
+		OutputSchema: jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"name\",\"source\"],\"properties\":{\"entrypoint\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"},\"template_names\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}},\"additionalProperties\":false}")),
 		Title:        stringPtr("Get Cluster Workflow Template"),
 	}}
 }
@@ -1102,16 +883,16 @@ func (a *MCPAdapter) toolSearchSyntheticTools() []*ToolInfo {
 func toolSearchToolInfo(name string) *ToolInfo {
 	return &ToolInfo{
 		Description:  stringPtr("Search available tools by plain text query or regex pattern and return matching tool definitions."),
-		InputSchema:  json.RawMessage([]byte("{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"Plain text query matched against tool names, titles, descriptions, metadata, and schemas\"},\"pattern\":{\"type\":\"string\",\"description\":\"Case-insensitive regex pattern matched against tool names, titles, descriptions, metadata, and schemas\"},\"max_results\":{\"type\":\"integer\",\"description\":\"Maximum number of tools to return for this search\"},\"include_schemas\":{\"type\":\"boolean\",\"description\":\"Include input and output schemas in returned descriptors\"},\"category\":{\"type\":\"string\",\"description\":\"Discovery category filter\"},\"tags\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"description\":\"Discovery tag filters\"}},\"additionalProperties\":false}")),
+		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"Plain text query matched against tool names, titles, descriptions, metadata, and schemas\"},\"pattern\":{\"type\":\"string\",\"description\":\"Case-insensitive regex pattern matched against tool names, titles, descriptions, metadata, and schemas\"},\"max_results\":{\"type\":\"integer\",\"description\":\"Maximum number of tools to return for this search\"},\"include_schemas\":{\"type\":\"boolean\",\"description\":\"Include input and output schemas in returned descriptors\"},\"category\":{\"type\":\"string\",\"description\":\"Discovery category filter\"},\"tags\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"description\":\"Discovery tag filters\"}},\"additionalProperties\":false}")),
 		Name:         name,
-		OutputSchema: json.RawMessage([]byte("{\"type\":\"object\",\"required\":[\"tools\",\"total_matches\",\"truncated\"],\"properties\":{\"tools\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"name\",\"description\"],\"properties\":{\"name\":{\"type\":\"string\"},\"title\":{\"type\":\"string\"},\"description\":{\"type\":\"string\"},\"inputSchema\":{\"type\":\"object\"},\"outputSchema\":{\"type\":\"object\"},\"annotations\":{\"type\":\"object\"},\"_meta\":{\"type\":\"object\"},\"icons\":{\"type\":\"array\",\"items\":{\"type\":\"object\"}},\"category\":{\"type\":\"string\"},\"tags\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"keywords\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"why_matched\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"call_tool_name\":{\"type\":\"string\"},\"call_tool_arguments\":{\"type\":\"object\"},\"call_tool_json\":{\"type\":\"string\"}}}},\"total_matches\":{\"type\":\"integer\"},\"truncated\":{\"type\":\"boolean\"},\"query\":{\"type\":\"string\"},\"pattern\":{\"type\":\"string\"}},\"additionalProperties\":false}")),
+		OutputSchema: jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"tools\",\"total_matches\",\"truncated\"],\"properties\":{\"tools\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"name\",\"description\"],\"properties\":{\"name\":{\"type\":\"string\"},\"title\":{\"type\":\"string\"},\"description\":{\"type\":\"string\"},\"inputSchema\":{\"type\":\"object\"},\"outputSchema\":{\"type\":\"object\"},\"annotations\":{\"type\":\"object\"},\"_meta\":{\"type\":\"object\"},\"icons\":{\"type\":\"array\",\"items\":{\"type\":\"object\"}},\"category\":{\"type\":\"string\"},\"tags\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"keywords\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"why_matched\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"call_tool_name\":{\"type\":\"string\"},\"call_tool_arguments\":{\"type\":\"object\"},\"call_tool_json\":{\"type\":\"string\"}}}},\"total_matches\":{\"type\":\"integer\"},\"truncated\":{\"type\":\"boolean\"},\"query\":{\"type\":\"string\"},\"pattern\":{\"type\":\"string\"}},\"additionalProperties\":false}")),
 		Title:        stringPtr("Search Tools"),
 	}
 }
 func toolCallProxyToolInfo(name string) *ToolInfo {
 	return &ToolInfo{
 		Description: stringPtr("Call a discovered tool by exact name. Always provide both top-level fields: name and arguments. Use arguments: {} when the discovered tool takes no arguments. Do not use args."),
-		InputSchema: json.RawMessage([]byte("{\"type\":\"object\",\"required\":[\"name\",\"arguments\"],\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Exact discovered tool name. Required. Copy this from search_tools results.\"},\"arguments\":{\"type\":\"object\",\"description\":\"Arguments object for the discovered tool. Required. Use {} when the discovered tool takes no arguments. Do not use args.\"}},\"additionalProperties\":false}")),
+		InputSchema: jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"name\",\"arguments\"],\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Exact discovered tool name. Required. Copy this from search_tools results.\"},\"arguments\":{\"type\":\"object\",\"description\":\"Arguments object for the discovered tool. Required. Use {} when the discovered tool takes no arguments. Do not use args.\"}},\"additionalProperties\":false}")),
 		Name:        name,
 		Title:       stringPtr("Call Tool"),
 	}
@@ -1128,7 +909,7 @@ func toolSearchHaystack(tool *ToolInfo) string {
 		parts = append(parts, *tool.Title)
 	}
 	switch schema := tool.InputSchema.(type) {
-	case json.RawMessage:
+	case jsontext.Value:
 		parts = append(parts, string(schema))
 	case []byte:
 		parts = append(parts, string(schema))
@@ -1140,27 +921,27 @@ func toolSearchHaystack(tool *ToolInfo) string {
 		}
 	}
 	switch schema := tool.OutputSchema.(type) {
-	case json.RawMessage:
+	case jsontext.Value:
 		parts = append(parts, string(schema))
 	case []byte:
 		parts = append(parts, string(schema))
 	}
 	switch meta := tool.Meta.(type) {
-	case json.RawMessage:
+	case jsontext.Value:
 		parts = append(parts, string(meta))
 	case []byte:
 		parts = append(parts, string(meta))
 	}
 	return strings.Join(parts, " ")
 }
-func toolRawJSON(value any) json.RawMessage {
+func toolRawJSON(value any) jsontext.Value {
 	switch v := value.(type) {
-	case json.RawMessage:
+	case jsontext.Value:
 		return v
 	case []byte:
-		return json.RawMessage(v)
+		return jsontext.Value(v)
 	case string:
-		return json.RawMessage([]byte(v))
+		return jsontext.Value([]byte(v))
 	default:
 		if v == nil {
 			return nil
@@ -1169,7 +950,7 @@ func toolRawJSON(value any) json.RawMessage {
 		if err != nil {
 			return nil
 		}
-		return json.RawMessage(raw)
+		return jsontext.Value(raw)
 	}
 }
 func toolDiscoveryMetadata(tool *ToolInfo) (string, []string, []string) {
@@ -1199,28 +980,26 @@ func toolDiscoveryCallTemplateArguments(tool *ToolInfo) map[string]any {
 	if len(raw) == 0 {
 		return nil
 	}
-	var meta map[string]struct {
-		CallTemplateArguments map[string]any `json:"call_template_arguments"`
-	}
-	if json.Unmarshal(raw, &meta) != nil {
+	meta, err := sdkbridge.DecodeMeta(raw)
+	if err != nil {
 		return nil
 	}
-	discovery := meta["com.github.caliluke.loom-mcp/discovery"]
-	if len(discovery.CallTemplateArguments) == 0 {
+	discovery, ok := meta["com.github.caliluke.loom-mcp/discovery"].(map[string]any)
+	if !ok {
 		return nil
 	}
-	out := make(map[string]any, len(discovery.CallTemplateArguments))
-	for name, value := range discovery.CallTemplateArguments {
-		out[name] = value
+	arguments, ok := discovery["call_template_arguments"].(map[string]any)
+	if !ok || len(arguments) == 0 {
+		return nil
 	}
-	return out
+	return arguments
 }
 func toolSearchDescriptorFor(tool *ToolInfo, includeSchemas bool, callName string, query string, score int, settings toolSearchSettings) toolSearchDescriptor {
 	category, tags, keywords := toolDiscoveryMetadata(tool)
 	callArguments := toolCallArgumentsExample(tool)
 	callArgumentsJSON, _ := marshalToolSearchJSON(callArguments)
 	descriptor := toolSearchDescriptor{
-		CallToolArguments: json.RawMessage(callArgumentsJSON),
+		CallToolArguments: jsontext.Value(callArgumentsJSON),
 		CallToolJSON:      string(callArgumentsJSON),
 		CallToolName:      callName,
 		Category:          category,
@@ -1400,14 +1179,7 @@ func toolSearchWhyMatched(tool *ToolInfo, query string, score int, settings tool
 	return []string{fmt.Sprintf("matched query %q against tool metadata", query)}
 }
 func marshalToolSearchJSON(value any) ([]byte, error) {
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(value); err != nil {
-		return nil, err
-	}
-	return bytes.TrimRight(buf.Bytes(), "\n"), nil
+	return json.Marshal(value, json.Deterministic(true), jsontext.EscapeForHTML(false), jsontext.WithIndent("  "))
 }
 func toolExampleValue(property map[string]any) any {
 	typ := ""
@@ -1544,7 +1316,7 @@ func (a *MCPAdapter) handleSearchTools(ctx context.Context, p *ToolsCallPayload,
 		return false, err
 	}
 	if len(bytes.TrimSpace(arguments)) == 0 {
-		arguments = json.RawMessage([]byte("{}"))
+		arguments = jsontext.Value([]byte("{}"))
 	}
 	if err := decodeMCPPayloadStrict(arguments, &payload); err != nil {
 		return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", "Provide {\"query\":\"...\"} or {\"pattern\":\"...\"} to search tools."))
@@ -1667,7 +1439,7 @@ func (a *MCPAdapter) handleCallToolProxy(ctx context.Context, p *ToolsCallPayloa
 	}
 	arguments := payload.Arguments
 	if len(bytes.TrimSpace(arguments)) == 0 {
-		arguments = json.RawMessage([]byte("{}"))
+		arguments = jsontext.Value([]byte("{}"))
 	}
 	proxied := &ToolsCallPayload{
 		Arguments: mcpJSONFromRaw(arguments),
@@ -1682,7 +1454,7 @@ func (a *MCPAdapter) handleCallToolProxy(ctx context.Context, p *ToolsCallPayloa
 	toolErr := result != nil && result.IsError != nil && *result.IsError
 	return toolErr, stream.SendAndClose(ctx, result)
 }
-func listWorkflowsInputRecovery(err error, raw json.RawMessage) string {
+func listWorkflowsInputRecovery(err error, raw jsontext.Value) string {
 	message := strings.TrimSpace(loom.ErrorSafeMessage(err))
 	if message == "" {
 		message = strings.TrimSpace(err.Error())
@@ -1697,7 +1469,7 @@ func listWorkflowsInputRecovery(err error, raw json.RawMessage) string {
 	}
 	return "Provide valid tool arguments. Example: " + example
 }
-func getWorkflowInputRecovery(err error, raw json.RawMessage) string {
+func getWorkflowInputRecovery(err error, raw jsontext.Value) string {
 	message := strings.TrimSpace(loom.ErrorSafeMessage(err))
 	if message == "" {
 		message = strings.TrimSpace(err.Error())
@@ -1712,7 +1484,7 @@ func getWorkflowInputRecovery(err error, raw json.RawMessage) string {
 	}
 	return "Provide valid tool arguments. Example: " + example
 }
-func getWorkflowLogsInputRecovery(err error, raw json.RawMessage) string {
+func getWorkflowLogsInputRecovery(err error, raw jsontext.Value) string {
 	message := strings.TrimSpace(loom.ErrorSafeMessage(err))
 	if message == "" {
 		message = strings.TrimSpace(err.Error())
@@ -1727,7 +1499,7 @@ func getWorkflowLogsInputRecovery(err error, raw json.RawMessage) string {
 	}
 	return "Provide valid tool arguments. Example: " + example
 }
-func terminateWorkflowInputRecovery(err error, raw json.RawMessage) string {
+func terminateWorkflowInputRecovery(err error, raw jsontext.Value) string {
 	message := strings.TrimSpace(loom.ErrorSafeMessage(err))
 	if message == "" {
 		message = strings.TrimSpace(err.Error())
@@ -1742,7 +1514,7 @@ func terminateWorkflowInputRecovery(err error, raw json.RawMessage) string {
 	}
 	return "Provide valid tool arguments. Example: " + example
 }
-func retryWorkflowInputRecovery(err error, raw json.RawMessage) string {
+func retryWorkflowInputRecovery(err error, raw jsontext.Value) string {
 	message := strings.TrimSpace(loom.ErrorSafeMessage(err))
 	if message == "" {
 		message = strings.TrimSpace(err.Error())
@@ -1757,7 +1529,7 @@ func retryWorkflowInputRecovery(err error, raw json.RawMessage) string {
 	}
 	return "Provide valid tool arguments. Example: " + example
 }
-func listCronWorkflowsInputRecovery(err error, raw json.RawMessage) string {
+func listCronWorkflowsInputRecovery(err error, raw jsontext.Value) string {
 	message := strings.TrimSpace(loom.ErrorSafeMessage(err))
 	if message == "" {
 		message = strings.TrimSpace(err.Error())
@@ -1772,7 +1544,7 @@ func listCronWorkflowsInputRecovery(err error, raw json.RawMessage) string {
 	}
 	return "Provide valid tool arguments. Example: " + example
 }
-func getCronWorkflowInputRecovery(err error, raw json.RawMessage) string {
+func getCronWorkflowInputRecovery(err error, raw jsontext.Value) string {
 	message := strings.TrimSpace(loom.ErrorSafeMessage(err))
 	if message == "" {
 		message = strings.TrimSpace(err.Error())
@@ -1787,7 +1559,7 @@ func getCronWorkflowInputRecovery(err error, raw json.RawMessage) string {
 	}
 	return "Provide valid tool arguments. Example: " + example
 }
-func getCronHistoryInputRecovery(err error, raw json.RawMessage) string {
+func getCronHistoryInputRecovery(err error, raw jsontext.Value) string {
 	message := strings.TrimSpace(loom.ErrorSafeMessage(err))
 	if message == "" {
 		message = strings.TrimSpace(err.Error())
@@ -1802,7 +1574,7 @@ func getCronHistoryInputRecovery(err error, raw json.RawMessage) string {
 	}
 	return "Provide valid tool arguments. Example: " + example
 }
-func toggleCronSuspensionInputRecovery(err error, raw json.RawMessage) string {
+func toggleCronSuspensionInputRecovery(err error, raw jsontext.Value) string {
 	message := strings.TrimSpace(loom.ErrorSafeMessage(err))
 	if message == "" {
 		message = strings.TrimSpace(err.Error())
@@ -1817,7 +1589,7 @@ func toggleCronSuspensionInputRecovery(err error, raw json.RawMessage) string {
 	}
 	return "Provide valid tool arguments. Example: " + example
 }
-func listWorkflowTemplatesInputRecovery(err error, raw json.RawMessage) string {
+func listWorkflowTemplatesInputRecovery(err error, raw jsontext.Value) string {
 	message := strings.TrimSpace(loom.ErrorSafeMessage(err))
 	if message == "" {
 		message = strings.TrimSpace(err.Error())
@@ -1832,7 +1604,7 @@ func listWorkflowTemplatesInputRecovery(err error, raw json.RawMessage) string {
 	}
 	return "Provide valid tool arguments. Example: " + example
 }
-func getWorkflowTemplateInputRecovery(err error, raw json.RawMessage) string {
+func getWorkflowTemplateInputRecovery(err error, raw jsontext.Value) string {
 	message := strings.TrimSpace(loom.ErrorSafeMessage(err))
 	if message == "" {
 		message = strings.TrimSpace(err.Error())
@@ -1847,7 +1619,7 @@ func getWorkflowTemplateInputRecovery(err error, raw json.RawMessage) string {
 	}
 	return "Provide valid tool arguments. Example: " + example
 }
-func listClusterWorkflowTemplatesInputRecovery(err error, raw json.RawMessage) string {
+func listClusterWorkflowTemplatesInputRecovery(err error, raw jsontext.Value) string {
 	message := strings.TrimSpace(loom.ErrorSafeMessage(err))
 	if message == "" {
 		message = strings.TrimSpace(err.Error())
@@ -1862,7 +1634,7 @@ func listClusterWorkflowTemplatesInputRecovery(err error, raw json.RawMessage) s
 	}
 	return "Provide valid tool arguments. Example: " + example
 }
-func getClusterWorkflowTemplateInputRecovery(err error, raw json.RawMessage) string {
+func getClusterWorkflowTemplateInputRecovery(err error, raw jsontext.Value) string {
 	message := strings.TrimSpace(loom.ErrorSafeMessage(err))
 	if message == "" {
 		message = strings.TrimSpace(err.Error())
@@ -1879,7 +1651,7 @@ func getClusterWorkflowTemplateInputRecovery(err error, raw json.RawMessage) str
 }
 func (a *MCPAdapter) ToolsCall(ctx context.Context, p *ToolsCallPayload) (res *ToolsCallResult, err error) {
 	attrs := []attribute.KeyValue{}
-	var rawArguments json.RawMessage
+	var rawArguments jsontext.Value
 	if p != nil {
 		rawArguments, err = mcpJSONRaw(p.Arguments)
 		if err != nil {
@@ -1940,7 +1712,7 @@ func (a *MCPAdapter) toolsCallHandler(ctx context.Context, p *ToolsCallPayload, 
 	if a.isToolCallProxyName(name) {
 		return a.handleCallToolProxy(ctx, p, stream)
 	}
-	if a.toolSearchEnabled() && !a.opts.ToolSearch.AllowDirectHiddenCalls && isGeneratedToolName(name) && !a.isAlwaysVisibleToolName(name) {
+	if a.toolSearchEnabled() && isGeneratedToolName(name) && !a.isAlwaysVisibleToolName(name) {
 		return false, loom.PermanentError("invalid_params", "Unknown tool: %s", name)
 	}
 	return a.executeRealTool(ctx, p, stream)
@@ -1952,7 +1724,7 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 	}
 	arguments = bytes.TrimSpace(arguments)
 	if len(arguments) == 0 || bytes.Equal(arguments, []byte("null")) {
-		arguments = json.RawMessage([]byte("{}"))
+		arguments = jsontext.Value([]byte("{}"))
 	}
 	switch p.Name {
 	case "list_workflows":
@@ -2002,7 +1774,7 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowInputRecovery(err, arguments)))
 		}
 		{
-			if err := validateMCPPayloadRequired(rawFields, "name"); err != nil {
+			if err := validateMCPPayloadRequired(rawFields, "name", false); err != nil {
 				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowInputRecovery(err, arguments)))
 			}
 		}
@@ -2042,7 +1814,7 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 			}
 		}
 		{
-			if err := validateMCPPayloadRequired(rawFields, "workflow_name"); err != nil {
+			if err := validateMCPPayloadRequired(rawFields, "workflow_name", false); err != nil {
 				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowLogsInputRecovery(err, arguments)))
 			}
 		}
@@ -2074,10 +1846,10 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", terminateWorkflowInputRecovery(err, arguments)))
 		}
 		{
-			if err := validateMCPPayloadRequired(rawFields, "name"); err != nil {
+			if err := validateMCPPayloadRequired(rawFields, "name", false); err != nil {
 				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", terminateWorkflowInputRecovery(err, arguments)))
 			}
-			if err := validateMCPPayloadRequired(rawFields, "reason"); err != nil {
+			if err := validateMCPPayloadRequired(rawFields, "reason", false); err != nil {
 				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", terminateWorkflowInputRecovery(err, arguments)))
 			}
 		}
@@ -2109,7 +1881,7 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", retryWorkflowInputRecovery(err, arguments)))
 		}
 		{
-			if err := validateMCPPayloadRequired(rawFields, "name"); err != nil {
+			if err := validateMCPPayloadRequired(rawFields, "name", false); err != nil {
 				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", retryWorkflowInputRecovery(err, arguments)))
 			}
 		}
@@ -2164,7 +1936,7 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getCronWorkflowInputRecovery(err, arguments)))
 		}
 		{
-			if err := validateMCPPayloadRequired(rawFields, "name"); err != nil {
+			if err := validateMCPPayloadRequired(rawFields, "name", false); err != nil {
 				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getCronWorkflowInputRecovery(err, arguments)))
 			}
 		}
@@ -2201,7 +1973,7 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 			}
 		}
 		{
-			if err := validateMCPPayloadRequired(rawFields, "name"); err != nil {
+			if err := validateMCPPayloadRequired(rawFields, "name", false); err != nil {
 				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getCronHistoryInputRecovery(err, arguments)))
 			}
 		}
@@ -2233,7 +2005,10 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", toggleCronSuspensionInputRecovery(err, arguments)))
 		}
 		{
-			if err := validateMCPPayloadRequired(rawFields, "name"); err != nil {
+			if err := validateMCPPayloadRequired(rawFields, "name", false); err != nil {
+				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", toggleCronSuspensionInputRecovery(err, arguments)))
+			}
+			if err := validateMCPPayloadRequired(rawFields, "suspend", false); err != nil {
 				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", toggleCronSuspensionInputRecovery(err, arguments)))
 			}
 		}
@@ -2288,7 +2063,7 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowTemplateInputRecovery(err, arguments)))
 		}
 		{
-			if err := validateMCPPayloadRequired(rawFields, "name"); err != nil {
+			if err := validateMCPPayloadRequired(rawFields, "name", false); err != nil {
 				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowTemplateInputRecovery(err, arguments)))
 			}
 		}
@@ -2343,7 +2118,7 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getClusterWorkflowTemplateInputRecovery(err, arguments)))
 		}
 		{
-			if err := validateMCPPayloadRequired(rawFields, "name"); err != nil {
+			if err := validateMCPPayloadRequired(rawFields, "name", false); err != nil {
 				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getClusterWorkflowTemplateInputRecovery(err, arguments)))
 			}
 		}

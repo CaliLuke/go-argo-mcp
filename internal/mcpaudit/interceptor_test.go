@@ -15,7 +15,7 @@ import (
 
 type testInfo struct {
 	tool string
-	args json.RawMessage
+	args loom.JSONValue
 }
 
 func (i testInfo) Service() string                    { return "argo" }
@@ -23,7 +23,7 @@ func (i testInfo) Method() string                     { return "tools/call" }
 func (i testInfo) CallType() loom.InterceptorCallType { return loom.InterceptorUnary }
 func (i testInfo) RawPayload() any                    { return nil }
 func (i testInfo) Tool() string                       { return i.tool }
-func (i testInfo) RawArguments() json.RawMessage      { return i.args }
+func (i testInfo) RawArguments() loom.JSONValue       { return i.args }
 
 func TestInterceptorWritesJSONLAndRedactsConfirmationToken(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "audit.jsonl")
@@ -32,7 +32,7 @@ func TestInterceptorWritesJSONLAndRedactsConfirmationToken(t *testing.T) {
 		t.Fatalf("Open returned error: %v", err)
 	}
 	defer audit.Close()
-	info := testInfo{tool: "terminate_workflow", args: json.RawMessage(`{"namespace":"argo-ci","confirmation_token":"secret"}`)}
+	info := testInfo{tool: "terminate_workflow", args: loom.JSONValue(`{"namespace":"argo-ci","confirmation_token":"secret"}`)}
 	interceptor := audit.Interceptor()
 	result, err := interceptor(context.Background(), info, &mcpargo.ToolsCallPayload{Name: info.tool},
 		func(context.Context, *mcpargo.ToolsCallPayload) (*mcpargo.ToolsCallResult, error) {
@@ -62,5 +62,41 @@ func TestInterceptorWritesJSONLAndRedactsConfirmationToken(t *testing.T) {
 	}
 	if record.Tool != "terminate_workflow" || record.Status != "SUCCESS" || record.Summary != "terminated" {
 		t.Fatalf("unexpected record: %#v", record)
+	}
+}
+
+func TestInterceptorUsesStructuredContentAsSummary(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.jsonl")
+	audit, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open returned error: %v", err)
+	}
+	defer audit.Close()
+
+	info := testInfo{tool: "list_workflows", args: loom.JSONValue(`{}`)}
+	result, err := audit.Interceptor()(context.Background(), info, &mcpargo.ToolsCallPayload{Name: info.tool},
+		func(context.Context, *mcpargo.ToolsCallPayload) (*mcpargo.ToolsCallResult, error) {
+			return &mcpargo.ToolsCallResult{StructuredContent: loom.JSONValue(`{"count":2}`)}, nil
+		})
+	if err != nil {
+		t.Fatalf("interceptor returned error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("interceptor returned nil result")
+	}
+	if closeErr := audit.Close(); closeErr != nil {
+		t.Fatalf("Close returned error: %v", closeErr)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read audit file: %v", err)
+	}
+	var record Record
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatalf("decode audit record: %v", err)
+	}
+	if record.Summary != `{"count":2}` {
+		t.Fatalf("unexpected structured summary: %q", record.Summary)
 	}
 }

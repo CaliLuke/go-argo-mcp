@@ -9,7 +9,7 @@ package mcpargo
 
 import (
 	"context"
-	"encoding/json"
+	json "encoding/json/v2"
 	"errors"
 	"strings"
 
@@ -19,6 +19,7 @@ import (
 	"github.com/CaliLuke/loom-mcp/v2/runtime/agent/tools"
 	mcpruntime "github.com/CaliLuke/loom-mcp/v2/runtime/mcp"
 	"github.com/CaliLuke/loom-mcp/v2/runtime/mcp/retry"
+	loom "github.com/CaliLuke/loom/pkg"
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 )
 
@@ -44,7 +45,7 @@ var ArgoGoArgoMcpToolsetToolSpecs = []tools.ToolSpec{tools.ToolSpec{
 			},
 		},
 		Name:   "*argo.ListWorkflowsPayload",
-		Schema: []byte("{\"type\":\"object\",\"properties\":{\"limit\":{\"type\":\"integer\",\"description\":\"Maximum number of workflows to return\",\"default\":50,\"minimum\":1},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace to query\"},\"status\":{\"type\":\"string\",\"description\":\"Optional workflow status filter\",\"enum\":[\"Running\",\"Succeeded\",\"Failed\",\"Pending\",\"Error\"]}},\"additionalProperties\":false}"),
+		Schema: []byte("{\"type\":\"object\",\"properties\":{\"limit\":{\"type\":\"integer\",\"description\":\"Maximum number of workflows to return\",\"default\":50,\"minimum\":1,\"maximum\":9223372036854775807},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace to query\"},\"status\":{\"type\":\"string\",\"description\":\"Optional workflow status filter\",\"enum\":[\"Running\",\"Succeeded\",\"Failed\",\"Pending\",\"Error\"]}},\"additionalProperties\":false}"),
 	},
 	Result: tools.TypeSpec{
 		Codec: tools.JSONCodec[any]{
@@ -132,7 +133,7 @@ var ArgoGoArgoMcpToolsetToolSpecs = []tools.ToolSpec{tools.ToolSpec{
 			},
 		},
 		Name:   "*argo.GetWorkflowLogsPayload",
-		Schema: []byte("{\"type\":\"object\",\"required\":[\"workflow_name\"],\"properties\":{\"container\":{\"type\":\"string\",\"default\":\"main\"},\"max_lines\":{\"type\":\"integer\",\"description\":\"Maximum lines to return; zero returns all lines\",\"default\":200,\"minimum\":0},\"namespace\":{\"type\":\"string\"},\"pod_name\":{\"type\":\"string\"},\"search\":{\"type\":\"string\"},\"workflow_name\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
+		Schema: []byte("{\"type\":\"object\",\"required\":[\"workflow_name\"],\"properties\":{\"container\":{\"type\":\"string\",\"default\":\"main\"},\"max_lines\":{\"type\":\"integer\",\"description\":\"Maximum lines to return; zero returns all lines\",\"default\":200,\"minimum\":0,\"maximum\":9223372036854775807},\"namespace\":{\"type\":\"string\"},\"pod_name\":{\"type\":\"string\"},\"search\":{\"type\":\"string\"},\"workflow_name\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
 	},
 	Result: tools.TypeSpec{
 		Codec: tools.JSONCodec[any]{
@@ -352,7 +353,7 @@ var ArgoGoArgoMcpToolsetToolSpecs = []tools.ToolSpec{tools.ToolSpec{
 			},
 		},
 		Name:   "*argo.GetCronHistoryPayload",
-		Schema: []byte("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"limit\":{\"type\":\"integer\",\"default\":10,\"minimum\":1},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
+		Schema: []byte("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"limit\":{\"type\":\"integer\",\"default\":10,\"minimum\":1,\"maximum\":9223372036854775807},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
 	},
 	Result: tools.TypeSpec{
 		Codec: tools.JSONCodec[any]{
@@ -628,17 +629,11 @@ func RegisterArgoGoArgoMcpToolset(ctx context.Context, rt *agentsruntime.Runtime
 		}
 		var value any
 		if len(resp.Result) > 0 {
-			if err := json.Unmarshal(resp.Result, &value); err != nil {
-				return planner.ToolResult{Name: fullName}, err
-			}
+			value = loom.JSONValue(resp.Result)
 		}
 		var toolTelemetry *telemetry.ToolTelemetry
 		if len(resp.Structured) > 0 {
-			var structured any
-			if err := json.Unmarshal(resp.Structured, &structured); err != nil {
-				return planner.ToolResult{Name: fullName}, err
-			}
-			toolTelemetry = &telemetry.ToolTelemetry{Extra: map[string]any{"structured": structured}}
+			toolTelemetry = &telemetry.ToolTelemetry{Extra: map[string]any{"structured": loom.JSONValue(resp.Structured)}}
 		}
 		return planner.ToolResult{
 			Name:      fullName,
@@ -697,13 +692,13 @@ func ArgoGoArgoMcpToolsetRetryHint(toolName tools.Ident, err error) *planner.Ret
 			var example string
 			switch key {
 			case "list_workflows":
-				schemaJSON = "{\"type\":\"object\",\"properties\":{\"limit\":{\"type\":\"integer\",\"description\":\"Maximum number of workflows to return\",\"default\":50,\"minimum\":1},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace to query\"},\"status\":{\"type\":\"string\",\"description\":\"Optional workflow status filter\",\"enum\":[\"Running\",\"Succeeded\",\"Failed\",\"Pending\",\"Error\"]}},\"additionalProperties\":false}"
+				schemaJSON = "{\"type\":\"object\",\"properties\":{\"limit\":{\"type\":\"integer\",\"description\":\"Maximum number of workflows to return\",\"default\":50,\"minimum\":1,\"maximum\":9223372036854775807},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace to query\"},\"status\":{\"type\":\"string\",\"description\":\"Optional workflow status filter\",\"enum\":[\"Running\",\"Succeeded\",\"Failed\",\"Pending\",\"Error\"]}},\"additionalProperties\":false}"
 				example = "{\"limit\":0}"
 			case "get_workflow":
 				schemaJSON = "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}"
 				example = "{\"name\":\"example\"}"
 			case "get_workflow_logs":
-				schemaJSON = "{\"type\":\"object\",\"required\":[\"workflow_name\"],\"properties\":{\"container\":{\"type\":\"string\",\"default\":\"main\"},\"max_lines\":{\"type\":\"integer\",\"description\":\"Maximum lines to return; zero returns all lines\",\"default\":200,\"minimum\":0},\"namespace\":{\"type\":\"string\"},\"pod_name\":{\"type\":\"string\"},\"search\":{\"type\":\"string\"},\"workflow_name\":{\"type\":\"string\"}},\"additionalProperties\":false}"
+				schemaJSON = "{\"type\":\"object\",\"required\":[\"workflow_name\"],\"properties\":{\"container\":{\"type\":\"string\",\"default\":\"main\"},\"max_lines\":{\"type\":\"integer\",\"description\":\"Maximum lines to return; zero returns all lines\",\"default\":200,\"minimum\":0,\"maximum\":9223372036854775807},\"namespace\":{\"type\":\"string\"},\"pod_name\":{\"type\":\"string\"},\"search\":{\"type\":\"string\"},\"workflow_name\":{\"type\":\"string\"}},\"additionalProperties\":false}"
 				example = "{\"container\":\"example\",\"max_lines\":0,\"workflow_name\":\"example\"}"
 			case "terminate_workflow":
 				schemaJSON = "{\"type\":\"object\",\"required\":[\"name\",\"reason\"],\"properties\":{\"confirmation_token\":{\"type\":\"string\"},\"dry_run\":{\"type\":\"boolean\",\"description\":\"Preview mode; defaults to true\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"}},\"additionalProperties\":false}"
@@ -718,7 +713,7 @@ func ArgoGoArgoMcpToolsetRetryHint(toolName tools.Ident, err error) *planner.Ret
 				schemaJSON = "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}"
 				example = "{\"name\":\"example\"}"
 			case "get_cron_history":
-				schemaJSON = "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"limit\":{\"type\":\"integer\",\"default\":10,\"minimum\":1},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}"
+				schemaJSON = "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"limit\":{\"type\":\"integer\",\"default\":10,\"minimum\":1,\"maximum\":9223372036854775807},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}"
 				example = "{\"limit\":0,\"name\":\"example\"}"
 			case "toggle_cron_suspension":
 				schemaJSON = "{\"type\":\"object\",\"required\":[\"name\",\"suspend\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"suspend\":{\"type\":\"boolean\"}},\"additionalProperties\":false}"

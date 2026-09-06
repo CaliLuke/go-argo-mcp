@@ -1,6 +1,7 @@
 package mcpaudit
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -103,8 +104,12 @@ func resultSummary(result *mcpargo.ToolsCallResult) string {
 	if len(parts) > 0 {
 		return strings.Join(parts, "\n")
 	}
-	structured, ok := result.StructuredContent.Value()
-	if !ok {
+	raw := bytes.TrimSpace(result.StructuredContent)
+	if len(raw) == 0 {
+		return ""
+	}
+	var structured any
+	if err := json.Unmarshal(raw, &structured); err != nil {
 		return ""
 	}
 	encoded, err := json.Marshal(structured)
@@ -114,7 +119,7 @@ func resultSummary(result *mcpargo.ToolsCallResult) string {
 	return string(encoded)
 }
 
-func redactArguments(raw json.RawMessage) json.RawMessage {
+func redactArguments(raw []byte) json.RawMessage {
 	if len(raw) == 0 {
 		return json.RawMessage(`{}`)
 	}

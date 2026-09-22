@@ -2,9 +2,13 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
+
+	loom "github.com/CaliLuke/loom/pkg"
 
 	genargo "github.com/CaliLuke/go-argo-mcp/gen/argo"
 	"github.com/CaliLuke/go-argo-mcp/internal/argoapi"
@@ -70,7 +74,7 @@ func (s *ArgoService) ListWorkflows(ctx context.Context, payload *genargo.ListWo
 	}
 	items, err := client.ListWorkflows(ctx, namespace, status, limit)
 	if err != nil {
-		return nil, genargo.MakeArgoAPIError(err)
+		return nil, mapArgoError(err, argoTarget{action: "list", resource: "Workflows", namespace: namespace})
 	}
 
 	workflows := make([]*genargo.WorkflowSummary, 0, len(items))
@@ -122,7 +126,7 @@ func (s *ArgoService) GetWorkflow(ctx context.Context, payload *genargo.GetWorkf
 	}
 	detail, err := client.GetWorkflow(ctx, namespace, name)
 	if err != nil {
-		return nil, genargo.MakeArgoAPIError(err)
+		return nil, mapArgoError(err, argoTarget{action: "get", resource: "Workflow", namespace: namespace, name: name, listTool: "list_workflows"})
 	}
 
 	res := &genargo.WorkflowDetailResult{
@@ -172,7 +176,7 @@ func (s *ArgoService) GetWorkflowLogs(ctx context.Context, payload *genargo.GetW
 	}
 	entries, err := client.GetWorkflowLogs(ctx, namespace, workflowName, podName, container)
 	if err != nil {
-		return nil, genargo.MakeArgoAPIError(err)
+		return nil, mapArgoError(err, argoTarget{action: "get logs for", resource: "Workflow", namespace: namespace, name: workflowName, listTool: "list_workflows"})
 	}
 
 	total := len(entries)
@@ -205,7 +209,12 @@ func (s *ArgoService) GetWorkflowLogs(ctx context.Context, payload *genargo.GetW
 	if maxLines > 0 {
 		res.MaxLines = intPtr(maxLines)
 	}
-	if matching > returned {
+	switch {
+	case total == 0:
+		res.Note = strPtr(fmt.Sprintf("Argo returned no log entries for Workflow %q in namespace %q and container %q. The pods may have produced no logs, may have been removed, or logs may no longer be retained.", workflowName, namespace, container))
+	case search != "" && matching == 0:
+		res.Note = strPtr(fmt.Sprintf("No log entries matched %q among the %d entries returned by Argo.", search, total))
+	case matching > returned:
 		res.Note = strPtr(fmt.Sprintf("Showing last %d of %d matching lines", returned, matching))
 	}
 	return res, nil
@@ -225,31 +234,36 @@ func (s *ArgoService) TerminateWorkflow(ctx context.Context, payload *genargo.Te
 	token := stringPtrValue(payload.ConfirmationToken)
 
 	if !s.policy.AllowDestructive {
-		return actionResult("denied", "Destructive operations are not allowed by configuration", namespace, name), nil
+		return deniedActionResult("terminate_workflow", "MCP_ALLOW_DESTRUCTIVE", namespace, name), nil
 	}
 	client, err := s.requireClient()
 	if err != nil {
 		return nil, err
 	}
 	if dryRun {
-		confirmationToken, err := s.confirmations.Issue("terminate_workflow", namespace, name)
+		confirmationToken, err := s.confirmations.Issue("terminate_workflow:"+reason, namespace, name)
 		if err != nil {
 			return nil, genargo.MakeConfirmationInvalid(err)
 		}
-		res := actionResult("dry_run", "Preview generated for workflow termination", namespace, name)
-		res.Preview = strPtr(fmt.Sprintf("Would terminate workflow %s in namespace %s for reason: %s", name, namespace, reason))
-		res.Instructions = strPtr("Call again once with dry_run=false and the returned confirmation_token")
+		res := actionResult("dry_run", fmt.Sprintf("Termination preview generated for Workflow %q in namespace %q; no Argo request was made.", name, namespace), namespace, name)
+		res.Preview = strPtr(fmt.Sprintf("Would terminate Workflow %q in namespace %q for reason %q.", name, namespace, reason))
+		res.Instructions = strPtr("Call terminate_workflow once with the same name, namespace, and reason, dry_run=false, and the returned confirmation_token.")
 		res.ConfirmationToken = strPtr(confirmationToken)
 		res.Reason = strPtr(reason)
 		return res, nil
 	}
-	if s.policy.RequireConfirmation && !s.confirmations.Consume(token, "terminate_workflow", namespace, name) {
-		return nil, genargo.MakeConfirmationInvalid(fmt.Errorf("invalid confirmation token for terminate_workflow %s/%s", namespace, name))
+	if s.policy.RequireConfirmation && !s.confirmations.Consume(token, "terminate_workflow:"+reason, namespace, name) {
+		err := genargo.MakeConfirmationInvalid(fmt.Errorf("invalid confirmation token for terminate_workflow %s/%s", namespace, name))
+		return nil, loom.WithErrorRemedy(err, &loom.ErrorRemedy{
+			Code:        "argo.confirmation.refresh",
+			SafeMessage: fmt.Sprintf("Confirmation for Workflow %q in namespace %q is invalid, expired, already used, or scoped to different inputs.", name, namespace),
+			RetryHint:   "Run terminate_workflow again with the same name, namespace, and reason in dry-run mode, then use the new confirmation_token once. No Argo request was made.",
+		})
 	}
 	if err := client.TerminateWorkflow(ctx, namespace, name); err != nil {
-		return nil, genargo.MakeArgoAPIError(err)
+		return nil, mapArgoError(err, argoTarget{action: "terminate", resource: "Workflow", namespace: namespace, name: name, listTool: "list_workflows"})
 	}
-	res := actionResult("ok", "Workflow terminated", namespace, name)
+	res := actionResult("ok", fmt.Sprintf("Workflow %q in namespace %q was terminated.", name, namespace), namespace, name)
 	res.Reason = strPtr(reason)
 	return res, nil
 }
@@ -265,16 +279,16 @@ func (s *ArgoService) RetryWorkflow(ctx context.Context, payload *genargo.RetryW
 	}
 	restartSuccessful := boolPtrDefault(payload.RestartSuccessful, false)
 	if !s.policy.AllowMutations {
-		return actionResult("denied", "Mutation operations are not allowed by configuration", namespace, name), nil
+		return deniedActionResult("retry_workflow", "MCP_ALLOW_MUTATIONS", namespace, name), nil
 	}
 	client, err := s.requireClient()
 	if err != nil {
 		return nil, err
 	}
 	if err := client.RetryWorkflow(ctx, namespace, name, restartSuccessful); err != nil {
-		return nil, genargo.MakeArgoAPIError(err)
+		return nil, mapArgoError(err, argoTarget{action: "retry", resource: "Workflow", namespace: namespace, name: name, listTool: "list_workflows"})
 	}
-	res := actionResult("ok", "Workflow retry initiated", namespace, name)
+	res := actionResult("ok", fmt.Sprintf("Retry was initiated for Workflow %q in namespace %q.", name, namespace), namespace, name)
 	res.RestartSuccessful = boolPtr(restartSuccessful)
 	return res, nil
 }
@@ -291,13 +305,19 @@ func (s *ArgoService) ListCronWorkflows(ctx context.Context, payload *genargo.Li
 	}
 	items, err := client.ListCronWorkflows(ctx, namespace, suspended)
 	if err != nil {
-		return nil, genargo.MakeArgoAPIError(err)
+		return nil, mapArgoError(err, argoTarget{action: "list", resource: "CronWorkflows", namespace: namespace})
 	}
 	out := make([]*genargo.CronWorkflowSummary, 0, len(items))
 	for _, item := range items {
 		summary := &genargo.CronWorkflowSummary{Name: item.Name, Namespace: item.Namespace}
 		if item.Schedule != "" {
 			summary.Schedule = strPtr(item.Schedule)
+		}
+		if len(item.Schedules) > 0 {
+			summary.Schedules = item.Schedules
+		}
+		if item.Timezone != "" {
+			summary.Timezone = strPtr(item.Timezone)
 		}
 		summary.Suspended = boolPtr(item.Suspended)
 		out = append(out, summary)
@@ -329,7 +349,7 @@ func (s *ArgoService) GetCronWorkflow(ctx context.Context, payload *genargo.GetC
 	}
 	item, err := client.GetCronWorkflow(ctx, namespace, name)
 	if err != nil {
-		return nil, genargo.MakeArgoAPIError(err)
+		return nil, mapArgoError(err, argoTarget{action: "get", resource: "CronWorkflow", namespace: namespace, name: name, listTool: "list_cron_workflows"})
 	}
 	res := &genargo.CronWorkflowDetailResult{
 		Name:      item.Name,
@@ -339,6 +359,12 @@ func (s *ArgoService) GetCronWorkflow(ctx context.Context, payload *genargo.GetC
 	}
 	if item.Schedule != "" {
 		res.Schedule = strPtr(item.Schedule)
+	}
+	if len(item.Schedules) > 0 {
+		res.Schedules = item.Schedules
+	}
+	if item.Timezone != "" {
+		res.Timezone = strPtr(item.Timezone)
 	}
 	if item.LastScheduledTime != "" {
 		res.LastScheduledTime = strPtr(item.LastScheduledTime)
@@ -359,16 +385,16 @@ func (s *ArgoService) ToggleCronSuspension(ctx context.Context, payload *genargo
 		return nil, fmt.Errorf("name is required")
 	}
 	if !s.policy.AllowMutations {
-		return actionResult("denied", "Mutation operations are not allowed by configuration", namespace, name), nil
+		return deniedActionResult("toggle_cron_suspension", "MCP_ALLOW_MUTATIONS", namespace, name), nil
 	}
 	client, err := s.requireClient()
 	if err != nil {
 		return nil, err
 	}
 	if err := client.ToggleCronSuspension(ctx, namespace, name, payload.Suspend); err != nil {
-		return nil, genargo.MakeArgoAPIError(err)
+		return nil, mapArgoError(err, argoTarget{action: suspensionAction(payload.Suspend), resource: "CronWorkflow", namespace: namespace, name: name, listTool: "list_cron_workflows"})
 	}
-	return actionResult("ok", fmt.Sprintf("CronWorkflow %s", suspensionVerb(payload.Suspend)), namespace, name), nil
+	return actionResult("ok", fmt.Sprintf("CronWorkflow %q in namespace %q was %s.", name, namespace, suspensionVerb(payload.Suspend)), namespace, name), nil
 }
 
 func (s *ArgoService) ListWorkflowTemplates(ctx context.Context, payload *genargo.ListWorkflowTemplatesPayload) (*genargo.ListWorkflowTemplatesResult, error) {
@@ -383,7 +409,7 @@ func (s *ArgoService) ListWorkflowTemplates(ctx context.Context, payload *genarg
 	}
 	items, err := client.ListWorkflowTemplates(ctx, namespace, labelSelector)
 	if err != nil {
-		return nil, genargo.MakeArgoAPIError(err)
+		return nil, mapArgoError(err, argoTarget{action: "list", resource: "WorkflowTemplates", namespace: namespace})
 	}
 	out := make([]*genargo.TemplateSummary, 0, len(items))
 	for _, item := range items {
@@ -423,7 +449,7 @@ func (s *ArgoService) GetWorkflowTemplate(ctx context.Context, payload *genargo.
 	}
 	item, err := client.GetWorkflowTemplate(ctx, namespace, name)
 	if err != nil {
-		return nil, genargo.MakeArgoAPIError(err)
+		return nil, mapArgoError(err, argoTarget{action: "get", resource: "WorkflowTemplate", namespace: namespace, name: name, listTool: "list_workflow_templates"})
 	}
 	res := &genargo.WorkflowTemplateDetailResult{
 		Name:          item.Name,
@@ -447,7 +473,7 @@ func (s *ArgoService) ListClusterWorkflowTemplates(ctx context.Context, payload 
 	}
 	items, err := client.ListClusterWorkflowTemplates(ctx, labelSelector)
 	if err != nil {
-		return nil, genargo.MakeArgoAPIError(err)
+		return nil, mapArgoError(err, argoTarget{action: "list", resource: "ClusterWorkflowTemplates"})
 	}
 	out := make([]*genargo.ClusterWorkflowTemplateSummary, 0, len(items))
 	for _, item := range items {
@@ -479,7 +505,7 @@ func (s *ArgoService) GetClusterWorkflowTemplate(ctx context.Context, payload *g
 	}
 	item, err := client.GetClusterWorkflowTemplate(ctx, name)
 	if err != nil {
-		return nil, genargo.MakeArgoAPIError(err)
+		return nil, mapArgoError(err, argoTarget{action: "get", resource: "ClusterWorkflowTemplate", name: name, listTool: "list_cluster_workflow_templates"})
 	}
 	res := &genargo.ClusterWorkflowTemplateDetailResult{
 		Name:          item.Name,
@@ -508,7 +534,7 @@ func (s *ArgoService) GetCronHistory(ctx context.Context, payload *genargo.GetCr
 	}
 	entries, err := client.GetCronHistory(ctx, namespace, name, limit)
 	if err != nil {
-		return nil, genargo.MakeArgoAPIError(err)
+		return nil, mapArgoError(err, argoTarget{action: "get execution history for", resource: "CronWorkflow", namespace: namespace, name: name, listTool: "list_cron_workflows"})
 	}
 	out := make([]*genargo.CronHistoryEntry, 0, len(entries))
 	for _, entry := range entries {
@@ -552,14 +578,84 @@ func (s *ArgoService) requireClient() (*argoapi.Client, error) {
 	return s.client, nil
 }
 
+type argoTarget struct {
+	action    string
+	resource  string
+	namespace string
+	name      string
+	listTool  string
+}
+
+func (t argoTarget) describe() string {
+	target := t.resource
+	if t.name != "" {
+		target = fmt.Sprintf("%s %q", target, t.name)
+	}
+	if t.namespace != "" {
+		target += fmt.Sprintf(" in namespace %q", t.namespace)
+	}
+	return target
+}
+
+func (t argoTarget) notFoundHint() string {
+	if t.listTool != "" {
+		if t.namespace != "" {
+			return fmt.Sprintf("Call %s for namespace %q to discover valid names, or correct the name and namespace.", t.listTool, t.namespace)
+		}
+		return fmt.Sprintf("Call %s to discover valid names, or correct the name.", t.listTool)
+	}
+	return "Check the requested resource and server configuration before retrying."
+}
+
+func mapArgoError(err error, target argoTarget) error {
+	var httpErr *argoapi.HTTPError
+	if errors.As(err, &httpErr) {
+		switch httpErr.StatusCode {
+		case http.StatusNotFound:
+			return loom.WithErrorRemedy(genargo.MakeArgoNotFound(err), &loom.ErrorRemedy{
+				Code:        "argo.resource.not_found",
+				SafeMessage: fmt.Sprintf("%s was not found.", target.describe()),
+				RetryHint:   target.notFoundHint(),
+			})
+		case http.StatusUnauthorized, http.StatusForbidden:
+			return loom.WithErrorRemedy(genargo.MakeArgoAccessDenied(err), &loom.ErrorRemedy{
+				Code:        "argo.access.denied",
+				SafeMessage: fmt.Sprintf("Argo denied access while trying to %s %s.", target.action, target.describe()),
+				RetryHint:   "Check the Argo credentials and RBAC permissions used by this server before retrying.",
+			})
+		default:
+			if httpErr.StatusCode >= 400 && httpErr.StatusCode < 500 {
+				return loom.WithErrorRemedy(genargo.MakeArgoRequestRejected(err), &loom.ErrorRemedy{
+					Code:        "argo.request.rejected",
+					SafeMessage: fmt.Sprintf("Argo rejected the request to %s %s.", target.action, target.describe()),
+					RetryHint:   "Check the tool inputs and the resource's current state before retrying.",
+				})
+			}
+		}
+	}
+	return loom.WithErrorRemedy(genargo.MakeArgoAPIError(err), &loom.ErrorRemedy{
+		Code:        "argo.api.retry",
+		SafeMessage: fmt.Sprintf("Argo failed while trying to %s %s.", target.action, target.describe()),
+		RetryHint:   "Verify Argo connectivity and credentials, then retry the same request.",
+	})
+}
+
 func (s *ArgoService) authorizeNamespace(namespace string) error {
 	if namespaceInList(namespace, s.policy.DeniedNamespaces) {
-		return genargo.MakeNamespaceDenied(fmt.Errorf("namespace %q is explicitly denied", namespace))
+		return namespaceDeniedError(namespace, fmt.Errorf("namespace %q is explicitly denied", namespace))
 	}
 	if len(s.policy.AllowedNamespaces) > 0 && !namespaceInList(namespace, s.policy.AllowedNamespaces) {
-		return genargo.MakeNamespaceDenied(fmt.Errorf("namespace %q is not in the allow list", namespace))
+		return namespaceDeniedError(namespace, fmt.Errorf("namespace %q is not in the allow list", namespace))
 	}
 	return nil
+}
+
+func namespaceDeniedError(namespace string, cause error) error {
+	return loom.WithErrorRemedy(genargo.MakeNamespaceDenied(cause), &loom.ErrorRemedy{
+		Code:        "argo.namespace.denied",
+		SafeMessage: fmt.Sprintf("Namespace %q is denied by the MCP namespace policy.", namespace),
+		RetryHint:   "Use a namespace allowed by MCP_NAMESPACES_ALLOW and absent from MCP_NAMESPACES_DENY. No Argo request was made.",
+	})
 }
 
 func namespaceInList(namespace string, entries []string) bool {
@@ -583,6 +679,12 @@ func actionResult(status, message, namespace, name string) *genargo.ActionResult
 	if name != "" {
 		res.Name = strPtr(name)
 	}
+	return res
+}
+
+func deniedActionResult(toolName, setting, namespace, name string) *genargo.ActionResult {
+	res := actionResult("denied", fmt.Sprintf("%s is disabled by server policy.", toolName), namespace, name)
+	res.Instructions = strPtr(fmt.Sprintf("Ask the server operator to set %s=true and restart the server. No Argo request was made.", setting))
 	return res
 }
 
@@ -637,6 +739,13 @@ func suspensionVerb(suspend bool) string {
 		return "suspended"
 	}
 	return "resumed"
+}
+
+func suspensionAction(suspend bool) string {
+	if suspend {
+		return "suspend"
+	}
+	return "resume"
 }
 
 func strPtr(value string) *string { return &value }

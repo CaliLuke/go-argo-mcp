@@ -65,7 +65,7 @@ func (l *Logger) Interceptor() mcpargo.ToolCallInterceptor {
 		}
 		summary := resultSummary(result)
 		if summary == "" && err != nil {
-			summary = err.Error()
+			summary = "tool call failed"
 		}
 		_ = l.write(Record{
 			Tool:       info.Tool(),
@@ -95,24 +95,29 @@ func resultSummary(result *mcpargo.ToolsCallResult) string {
 	if result == nil {
 		return ""
 	}
-	var parts []string
-	for _, item := range result.Content {
-		if item != nil && item.Text != nil && *item.Text != "" {
-			parts = append(parts, *item.Text)
-		}
-	}
-	if len(parts) > 0 {
-		return strings.Join(parts, "\n")
-	}
 	raw := bytes.TrimSpace(result.StructuredContent)
 	if len(raw) == 0 {
-		return ""
+		for _, item := range result.Content {
+			if item != nil && item.Text != nil && json.Valid([]byte(*item.Text)) {
+				raw = []byte(*item.Text)
+				break
+			}
+		}
 	}
-	var structured any
+	var structured map[string]any
 	if err := json.Unmarshal(raw, &structured); err != nil {
 		return ""
 	}
-	encoded, err := json.Marshal(structured)
+	safe := make(map[string]any)
+	for _, key := range []string{"status", "count", "namespace", "name"} {
+		if value, ok := structured[key]; ok {
+			safe[key] = value
+		}
+	}
+	if len(safe) == 0 {
+		return ""
+	}
+	encoded, err := json.Marshal(safe)
 	if err != nil {
 		return ""
 	}

@@ -15,6 +15,8 @@ The server is read-only by default. Mutation and destructive tools require expli
 
 All 13 tools call real Argo HTTP endpoints. There are no mock fallbacks.
 
+CronWorkflow reads include every configured schedule and its timezone. `get_cron_workflow` reports the next nominal run when active; `when` and stop conditions can still prevent that run.
+
 ## Install
 
 Install the native binary with Homebrew:
@@ -29,7 +31,7 @@ Verify the installed binary:
 go-argo-mcp --version
 ```
 
-Or build it directly with Go 1.26.1:
+Or build it directly with Go 1.27.1:
 
 ```bash
 go install github.com/CaliLuke/go-argo-mcp/cmd/go-argo-mcp@latest
@@ -94,7 +96,7 @@ The binary is an HTTP server, so the MCP client does not launch it. Keep `go-arg
 | `MCP_NAMESPACES_ALLOW` | empty/all | Comma-separated namespace allow list; `*` permits all |
 | `MCP_NAMESPACES_DENY` | empty | Comma-separated deny list; deny takes precedence |
 
-Termination confirmation tokens are cryptographically random, expire after five minutes, are valid once, and are scoped to the exact action, namespace, and workflow.
+Termination confirmation tokens are cryptographically random, expire after five minutes, are valid once, and are scoped to the exact action, namespace, workflow, and reason.
 
 ### Audit and observability
 
@@ -107,7 +109,7 @@ Termination confirmation tokens are cryptographically random, expire after five 
 | `OTEL_EXPORTER_OTLP_INSECURE` | `false` | Use insecure OTLP transport |
 | `OTEL_EXPORTER_OTLP_HEADERS` | empty | Comma-separated OTLP headers |
 
-Audit arguments redact keys containing `token`, `password`, or `secret`.
+Audit arguments redact keys containing `token`, `password`, or `secret`. Response summaries retain only status, count, namespace, and name; workflow logs and confirmation tokens are not written to the audit file.
 
 ## Agent safety model
 
@@ -151,7 +153,10 @@ The test suite includes focused HTTP client tests, confirmation and namespace-po
 ## Troubleshooting
 
 - `configuration_error`: set `ARGO_BASE_URL` to the Argo Server URL, including its scheme and port.
-- `401` or `403` from Argo: check `ARGO_TOKEN`, or `ARGO_USERNAME` and `ARGO_PASSWORD`.
+- `argo_not_found`: check the resource name and namespace.
+- `argo_access_denied`: check Argo credentials and RBAC permissions.
+- `argo_request_rejected`: check the tool inputs and current resource state.
+- `argo_api_error`: a network or server failure may be temporary; retry after checking Argo availability.
 - `namespace_denied`: choose a namespace permitted by `MCP_NAMESPACES_ALLOW` and not present in `MCP_NAMESPACES_DENY`.
 - TLS hostname failures: set `ARGO_TLS_SERVER_NAME` to the certificate name. Use `ARGO_INSECURE_SKIP_TLS_VERIFY=true` only for an explicitly trusted development endpoint.
 

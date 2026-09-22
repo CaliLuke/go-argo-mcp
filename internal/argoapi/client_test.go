@@ -3,9 +3,12 @@ package argoapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
+	"time"
 )
 
 func TestClientUsesBearerAuthentication(t *testing.T) {
@@ -41,8 +44,8 @@ func TestClientUsesBasicAuthentication(t *testing.T) {
 
 func TestListWorkflowsAppliesLimitAfterLocalStatusFilter(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.URL.Query().Get("listOptions.limit"); got != "" {
-			t.Fatalf("server limit would truncate before status filtering: %q", got)
+		if got := r.URL.Query().Get("listOptions.limit"); got != "100" {
+			t.Fatalf("status filtering needs a useful page size, got %q", got)
 		}
 		writeJSON(t, w, map[string]any{"items": []any{
 			map[string]any{"metadata": map[string]any{"name": "done", "namespace": "argo-ci"}, "status": map[string]any{"phase": "Succeeded"}},
@@ -58,6 +61,31 @@ func TestListWorkflowsAppliesLimitAfterLocalStatusFilter(t *testing.T) {
 	}
 	if len(workflows) != 1 || workflows[0].Name != "active" {
 		t.Fatalf("unexpected workflows: %#v", workflows)
+	}
+}
+
+func TestListWorkflowsFindsMatchingStatusOnLaterPage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("listOptions.continue") == "next-page" {
+			writeJSON(t, w, map[string]any{"items": []any{
+				map[string]any{"metadata": map[string]any{"name": "active", "namespace": "argo-ci"}, "status": map[string]any{"phase": "Running"}},
+			}})
+			return
+		}
+		writeJSON(t, w, map[string]any{
+			"metadata": map[string]any{"continue": "next-page"},
+			"items":    []any{map[string]any{"metadata": map[string]any{"name": "done", "namespace": "argo-ci"}, "status": map[string]any{"phase": "Succeeded"}}},
+		})
+	}))
+	defer server.Close()
+
+	client := New(Config{BaseURL: server.URL})
+	workflows, err := client.ListWorkflows(context.Background(), "argo-ci", "Running", 1)
+	if err != nil {
+		t.Fatalf("ListWorkflows returned error: %v", err)
+	}
+	if len(workflows) != 1 || workflows[0].Name != "active" {
+		t.Fatalf("matching workflow on later page was lost: %#v", workflows)
 	}
 }
 
@@ -129,6 +157,10 @@ func TestToggleCronSuspensionSendsCompleteRequest(t *testing.T) {
 
 func TestGetCronHistoryUsesCronLabelAndLimit(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/cron-workflows/argo-ci/nightly" {
+			writeJSON(t, w, map[string]any{"metadata": map[string]any{"name": "nightly", "namespace": "argo-ci"}})
+			return
+		}
 		if r.URL.Path != "/api/v1/workflows/argo-ci" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
@@ -152,6 +184,97 @@ func TestGetCronHistoryUsesCronLabelAndLimit(t *testing.T) {
 	}
 	if len(history) != 2 || history[0].Name != "nightly-002" || history[0].Status != "Failed" {
 		t.Fatalf("unexpected history: %#v", history)
+	}
+}
+
+func TestGetCronHistoryDistinguishesMissingCronWorkflowFromNoRuns(t *testing.T) {
+	workflowListCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/cron-workflows/argo-ci/missing" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		workflowListCalled = true
+		writeJSON(t, w, map[string]any{"items": []any{}})
+	}))
+	defer server.Close()
+	client := New(Config{BaseURL: server.URL})
+	_, err := client.GetCronHistory(context.Background(), "argo-ci", "missing", 5)
+	var httpErr *HTTPError
+	if !errors.As(err, &httpErr) || httpErr.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected not-found error, got %v", err)
+	}
+	if workflowListCalled {
+		t.Fatal("missing CronWorkflow should not trigger a workflow list")
+	}
+}
+
+func TestCronWorkflowReadsModernSchedulesAndTimezone(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		item := map[string]any{
+			"metadata": map[string]any{"name": "nightly", "namespace": "argo-ci"},
+			"spec":     map[string]any{"schedules": []string{"0 0 * * *", "0 12 * * *"}, "timezone": "America/Los_Angeles"},
+			"status":   map[string]any{"lastScheduledTime": "2026-09-21T19:00:00Z"},
+		}
+		if r.URL.Path == "/api/v1/cron-workflows/argo-ci" {
+			writeJSON(t, w, map[string]any{"items": []any{item}})
+			return
+		}
+		writeJSON(t, w, item)
+	}))
+	defer server.Close()
+
+	client := New(Config{BaseURL: server.URL})
+	listed, err := client.ListCronWorkflows(context.Background(), "argo-ci", nil)
+	if err != nil {
+		t.Fatalf("ListCronWorkflows returned error: %v", err)
+	}
+	if len(listed) != 1 || listed[0].Schedule != "0 0 * * *" ||
+		!slices.Equal(listed[0].Schedules, []string{"0 0 * * *", "0 12 * * *"}) ||
+		listed[0].Timezone != "America/Los_Angeles" {
+		t.Fatalf("modern cron schedule lost in list result: %#v", listed)
+	}
+	detail, err := client.GetCronWorkflow(context.Background(), "argo-ci", "nightly")
+	if err != nil {
+		t.Fatalf("GetCronWorkflow returned error: %v", err)
+	}
+	if !slices.Equal(detail.Schedules, []string{"0 0 * * *", "0 12 * * *"}) ||
+		detail.Timezone != "America/Los_Angeles" || detail.LastScheduledTime != "2026-09-21T19:00:00Z" {
+		t.Fatalf("modern cron schedule lost in detail result: %#v", detail)
+	}
+}
+
+func TestNextCronRunUsesEarliestScheduleInConfiguredTimezone(t *testing.T) {
+	now := time.Date(2026, time.September, 22, 16, 0, 0, 0, time.UTC)
+	got := nextCronRun([]string{"0 12 * * *", "0 10 * * *"}, "America/Los_Angeles", now)
+	if got != "2026-09-22T17:00:00Z" {
+		t.Fatalf("unexpected next cron run: %q", got)
+	}
+}
+
+func TestWorkflowLogsDecodesSSEFrames(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("data: {\"result\":{\"podName\":\"build-pod\",\"content\":\"done\"}}\n\n"))
+	}))
+	defer server.Close()
+	client := New(Config{BaseURL: server.URL})
+	entries, err := client.GetWorkflowLogs(context.Background(), "argo-ci", "build", "", "main")
+	if err != nil {
+		t.Fatalf("GetWorkflowLogs returned error: %v", err)
+	}
+	if len(entries) != 1 || entries[0].PodName != "build-pod" || entries[0].Content != "done" {
+		t.Fatalf("unexpected log entries: %#v", entries)
+	}
+}
+
+func TestWorkflowLogsReportsStreamError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("{\"error\":{\"message\":\"permission denied\"}}\n"))
+	}))
+	defer server.Close()
+	client := New(Config{BaseURL: server.URL})
+	if _, err := client.GetWorkflowLogs(context.Background(), "argo-ci", "build", "", "main"); err == nil {
+		t.Fatal("stream error must not look like empty logs")
 	}
 }
 

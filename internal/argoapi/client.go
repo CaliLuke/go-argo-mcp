@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/robfig/cron/v3"
 )
 
 type Config struct {
@@ -51,6 +53,8 @@ type CronWorkflowSummary struct {
 	Name      string
 	Namespace string
 	Schedule  string
+	Schedules []string
+	Timezone  string
 	Suspended bool
 }
 
@@ -87,6 +91,15 @@ type Client struct {
 	token    string
 	username string
 	password string
+}
+
+type HTTPError struct {
+	StatusCode int
+	Endpoint   string
+}
+
+func (e *HTTPError) Error() string {
+	return fmt.Sprintf("argo returned status %d for %s", e.StatusCode, e.Endpoint)
 }
 
 func New(config Config) *Client {
@@ -139,32 +152,41 @@ func (c *Client) ListWorkflows(ctx context.Context, namespace, status string, li
 func (c *Client) listWorkflows(ctx context.Context, namespace, status string, limit int, labelSelector string) ([]WorkflowSummary, error) {
 	endpoint := c.baseURL + "/api/v1/workflows/" + url.PathEscape(namespace)
 	query := map[string]string{}
-	if status == "" {
-		query["listOptions.limit"] = intString(limit)
-	}
 	if labelSelector != "" {
 		query["listOptions.labelSelector"] = labelSelector
 	}
-	resp, err := c.doJSON(ctx, http.MethodGet, endpoint, query, nil)
-	if err != nil {
-		return nil, err
+	workflows := make([]WorkflowSummary, 0)
+	seenCursors := make(map[string]bool)
+	for {
+		pageSize := limit - len(workflows)
+		if status != "" && pageSize < 100 {
+			pageSize = 100
+		}
+		query["listOptions.limit"] = intString(pageSize)
+		resp, err := c.doJSON(ctx, http.MethodGet, endpoint, query, nil)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range jsonItems(resp) {
+			summary := workflowSummaryFromObject(item)
+			if summary.Name == "" || status != "" && !strings.EqualFold(summary.Status, status) {
+				continue
+			}
+			workflows = append(workflows, summary)
+			if limit > 0 && len(workflows) >= limit {
+				return workflows, nil
+			}
+		}
+		cursor := stringValue(objectValue(resp, "metadata"), "continue")
+		if cursor == "" {
+			return workflows, nil
+		}
+		if seenCursors[cursor] {
+			return nil, fmt.Errorf("argo repeated workflow list continuation token")
+		}
+		seenCursors[cursor] = true
+		query["listOptions.continue"] = cursor
 	}
-	items := jsonItems(resp)
-	workflows := make([]WorkflowSummary, 0, len(items))
-	for _, item := range items {
-		summary := workflowSummaryFromObject(item)
-		if summary.Name == "" {
-			continue
-		}
-		if status != "" && !strings.EqualFold(summary.Status, status) {
-			continue
-		}
-		workflows = append(workflows, summary)
-		if limit > 0 && len(workflows) >= limit {
-			break
-		}
-	}
-	return workflows, nil
 }
 
 func (c *Client) GetWorkflow(ctx context.Context, namespace, name string) (*WorkflowDetail, error) {
@@ -203,14 +225,22 @@ func (c *Client) GetWorkflowLogs(ctx context.Context, namespace, workflowName, p
 	entries := make([]WorkflowLogEntry, 0, len(lines))
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		if line == "" {
+		if line == "" || strings.HasPrefix(line, ":") || strings.HasPrefix(line, "event:") ||
+			strings.HasPrefix(line, "id:") || strings.HasPrefix(line, "retry:") {
 			continue
 		}
+		line = strings.TrimSpace(strings.TrimPrefix(line, "data:"))
 		var payload map[string]any
 		if err := json.Unmarshal([]byte(line), &payload); err != nil {
-			continue
+			return nil, fmt.Errorf("decode Argo log stream frame: %w", err)
+		}
+		if _, failed := payload["error"]; failed {
+			return nil, fmt.Errorf("argo log stream returned an error")
 		}
 		result := objectValue(payload, "result")
+		if len(result) == 0 {
+			result = payload
+		}
 		content := stringValue(result, "content")
 		if content == "" {
 			continue
@@ -255,7 +285,9 @@ func (c *Client) ListCronWorkflows(ctx context.Context, namespace string, suspen
 		summary := CronWorkflowSummary{
 			Name:      stringValue(objectValue(item, "metadata"), "name"),
 			Namespace: coalesce(stringValue(objectValue(item, "metadata"), "namespace"), namespace),
-			Schedule:  stringValue(objectValue(item, "spec"), "schedule"),
+			Schedule:  cronSchedule(objectValue(item, "spec")),
+			Schedules: cronSchedules(objectValue(item, "spec")),
+			Timezone:  stringValue(objectValue(item, "spec"), "timezone"),
 			Suspended: boolValue(objectValue(item, "spec"), "suspend"),
 		}
 		if summary.Name == "" {
@@ -277,15 +309,27 @@ func (c *Client) GetCronWorkflow(ctx context.Context, namespace, name string) (*
 	}
 	spec := objectValue(resp, "spec")
 	status := objectValue(resp, "status")
+	schedules := cronSchedules(spec)
+	timezone := stringValue(spec, "timezone")
+	suspended := boolValue(spec, "suspend")
+	nextScheduledTime := ""
+	if !suspended {
+		nextScheduledTime = stringValue(status, "nextScheduledTime")
+		if nextScheduledTime == "" {
+			nextScheduledTime = nextCronRun(schedules, timezone, time.Now())
+		}
+	}
 	return &CronWorkflowDetail{
 		CronWorkflowSummary: CronWorkflowSummary{
 			Name:      stringValue(objectValue(resp, "metadata"), "name"),
 			Namespace: coalesce(stringValue(objectValue(resp, "metadata"), "namespace"), namespace),
-			Schedule:  stringValue(spec, "schedule"),
-			Suspended: boolValue(spec, "suspend"),
+			Schedule:  cronSchedule(spec),
+			Schedules: schedules,
+			Timezone:  timezone,
+			Suspended: suspended,
 		},
 		LastScheduledTime: stringValue(status, "lastScheduledTime"),
-		NextScheduledTime: "",
+		NextScheduledTime: nextScheduledTime,
 	}, nil
 }
 
@@ -303,6 +347,9 @@ func (c *Client) ToggleCronSuspension(ctx context.Context, namespace, name strin
 }
 
 func (c *Client) GetCronHistory(ctx context.Context, namespace, name string, limit int) ([]WorkflowSummary, error) {
+	if _, err := c.GetCronWorkflow(ctx, namespace, name); err != nil {
+		return nil, err
+	}
 	labelSelector := "workflows.argoproj.io/cron-workflow=" + name
 	history, err := c.listWorkflows(ctx, namespace, "", limit, labelSelector)
 	if err != nil {
@@ -396,7 +443,7 @@ func (c *Client) doJSON(ctx context.Context, method, endpoint string, query map[
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("argo returned status %d for %s", resp.StatusCode, endpoint)
+		return nil, &HTTPError{StatusCode: resp.StatusCode, Endpoint: endpoint}
 	}
 	var payload map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
@@ -416,7 +463,7 @@ func (c *Client) doText(ctx context.Context, method, endpoint string, query map[
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("argo returned status %d for %s", resp.StatusCode, endpoint)
+		return "", &HTTPError{StatusCode: resp.StatusCode, Endpoint: endpoint}
 	}
 	var buf bytes.Buffer
 	if _, err := buf.ReadFrom(resp.Body); err != nil {
@@ -517,6 +564,50 @@ func templateNames(item map[string]any) []string {
 		}
 	}
 	return names
+}
+
+func cronSchedules(spec map[string]any) []string {
+	raw := anySlice(spec["schedules"])
+	schedules := make([]string, 0, len(raw))
+	for _, value := range raw {
+		if schedule, ok := value.(string); ok && schedule != "" {
+			schedules = append(schedules, schedule)
+		}
+	}
+	if len(schedules) == 0 {
+		if schedule := stringValue(spec, "schedule"); schedule != "" {
+			return []string{schedule}
+		}
+	}
+	return schedules
+}
+
+func cronSchedule(spec map[string]any) string {
+	if schedules := cronSchedules(spec); len(schedules) > 0 {
+		return schedules[0]
+	}
+	return ""
+}
+
+func nextCronRun(schedules []string, timezone string, now time.Time) string {
+	var next time.Time
+	for _, expression := range schedules {
+		if timezone != "" {
+			expression = "CRON_TZ=" + timezone + " " + expression
+		}
+		schedule, err := cron.ParseStandard(expression)
+		if err != nil {
+			continue
+		}
+		candidate := schedule.Next(now)
+		if next.IsZero() || candidate.Before(next) {
+			next = candidate
+		}
+	}
+	if next.IsZero() {
+		return ""
+	}
+	return next.UTC().Format(time.RFC3339)
 }
 
 func extractParameters(item map[string]any, parentKey, argumentsKey string) map[string]string {

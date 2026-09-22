@@ -39,6 +39,9 @@ func NewClient(listWorkflows, getWorkflow, getWorkflowLogs, terminateWorkflow, r
 // ListWorkflows may return the following errors:
 // - "configuration_error" (type *loom.ServiceError)
 // - "argo_api_error" (type *loom.ServiceError)
+// - "argo_not_found" (type *loom.ServiceError)
+// - "argo_access_denied" (type *loom.ServiceError)
+// - "argo_request_rejected" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
 // - error: internal error
@@ -55,6 +58,9 @@ func (c *Client) ListWorkflows(ctx context.Context, p *ListWorkflowsPayload) (re
 // GetWorkflow may return the following errors:
 // - "configuration_error" (type *loom.ServiceError)
 // - "argo_api_error" (type *loom.ServiceError)
+// - "argo_not_found" (type *loom.ServiceError)
+// - "argo_access_denied" (type *loom.ServiceError)
+// - "argo_request_rejected" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
 // - error: internal error
@@ -71,6 +77,9 @@ func (c *Client) GetWorkflow(ctx context.Context, p *GetWorkflowPayload) (res *W
 // GetWorkflowLogs may return the following errors:
 // - "configuration_error" (type *loom.ServiceError)
 // - "argo_api_error" (type *loom.ServiceError)
+// - "argo_not_found" (type *loom.ServiceError)
+// - "argo_access_denied" (type *loom.ServiceError)
+// - "argo_request_rejected" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
 // - error: internal error
@@ -88,6 +97,9 @@ func (c *Client) GetWorkflowLogs(ctx context.Context, p *GetWorkflowLogsPayload)
 // TerminateWorkflow may return the following errors:
 // - "configuration_error" (type *loom.ServiceError)
 // - "argo_api_error" (type *loom.ServiceError)
+// - "argo_not_found" (type *loom.ServiceError)
+// - "argo_access_denied" (type *loom.ServiceError)
+// - "argo_request_rejected" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
 // - error: internal error
@@ -104,6 +116,9 @@ func (c *Client) TerminateWorkflow(ctx context.Context, p *TerminateWorkflowPayl
 // RetryWorkflow may return the following errors:
 // - "configuration_error" (type *loom.ServiceError)
 // - "argo_api_error" (type *loom.ServiceError)
+// - "argo_not_found" (type *loom.ServiceError)
+// - "argo_access_denied" (type *loom.ServiceError)
+// - "argo_request_rejected" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
 // - error: internal error
@@ -121,6 +136,9 @@ func (c *Client) RetryWorkflow(ctx context.Context, p *RetryWorkflowPayload) (re
 // ListCronWorkflows may return the following errors:
 // - "configuration_error" (type *loom.ServiceError)
 // - "argo_api_error" (type *loom.ServiceError)
+// - "argo_not_found" (type *loom.ServiceError)
+// - "argo_access_denied" (type *loom.ServiceError)
+// - "argo_request_rejected" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
 // - error: internal error
@@ -137,6 +155,9 @@ func (c *Client) ListCronWorkflows(ctx context.Context, p *ListCronWorkflowsPayl
 // GetCronWorkflow may return the following errors:
 // - "configuration_error" (type *loom.ServiceError)
 // - "argo_api_error" (type *loom.ServiceError)
+// - "argo_not_found" (type *loom.ServiceError)
+// - "argo_access_denied" (type *loom.ServiceError)
+// - "argo_request_rejected" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
 // - error: internal error
@@ -153,6 +174,9 @@ func (c *Client) GetCronWorkflow(ctx context.Context, p *GetCronWorkflowPayload)
 // GetCronHistory may return the following errors:
 // - "configuration_error" (type *loom.ServiceError)
 // - "argo_api_error" (type *loom.ServiceError)
+// - "argo_not_found" (type *loom.ServiceError)
+// - "argo_access_denied" (type *loom.ServiceError)
+// - "argo_request_rejected" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
 // - error: internal error
@@ -170,6 +194,9 @@ func (c *Client) GetCronHistory(ctx context.Context, p *GetCronHistoryPayload) (
 // ToggleCronSuspension may return the following errors:
 // - "configuration_error" (type *loom.ServiceError)
 // - "argo_api_error" (type *loom.ServiceError)
+// - "argo_not_found" (type *loom.ServiceError)
+// - "argo_access_denied" (type *loom.ServiceError)
+// - "argo_request_rejected" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
 // - error: internal error
@@ -187,6 +214,9 @@ func (c *Client) ToggleCronSuspension(ctx context.Context, p *ToggleCronSuspensi
 // ListWorkflowTemplates may return the following errors:
 // - "configuration_error" (type *loom.ServiceError)
 // - "argo_api_error" (type *loom.ServiceError)
+// - "argo_not_found" (type *loom.ServiceError)
+// - "argo_access_denied" (type *loom.ServiceError)
+// - "argo_request_rejected" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
 // - error: internal error
@@ -204,6 +234,9 @@ func (c *Client) ListWorkflowTemplates(ctx context.Context, p *ListWorkflowTempl
 // GetWorkflowTemplate may return the following errors:
 // - "configuration_error" (type *loom.ServiceError)
 // - "argo_api_error" (type *loom.ServiceError)
+// - "argo_not_found" (type *loom.ServiceError)
+// - "argo_access_denied" (type *loom.ServiceError)
+// - "argo_request_rejected" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
 // - error: internal error
@@ -221,6 +254,9 @@ func (c *Client) GetWorkflowTemplate(ctx context.Context, p *GetWorkflowTemplate
 // ListClusterWorkflowTemplates may return the following errors:
 // - "configuration_error" (type *loom.ServiceError)
 // - "argo_api_error" (type *loom.ServiceError)
+// - "argo_not_found" (type *loom.ServiceError)
+// - "argo_access_denied" (type *loom.ServiceError)
+// - "argo_request_rejected" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
 // - error: internal error
@@ -238,6 +274,9 @@ func (c *Client) ListClusterWorkflowTemplates(ctx context.Context, p *ListCluste
 // GetClusterWorkflowTemplate may return the following errors:
 // - "configuration_error" (type *loom.ServiceError)
 // - "argo_api_error" (type *loom.ServiceError)
+// - "argo_not_found" (type *loom.ServiceError)
+// - "argo_access_denied" (type *loom.ServiceError)
+// - "argo_request_rejected" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
 // - error: internal error

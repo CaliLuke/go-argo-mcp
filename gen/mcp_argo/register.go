@@ -25,7 +25,7 @@ import (
 
 // ArgoGoArgoMcpToolsetToolSpecs contains the tool specifications for the go-argo-mcp toolset.
 var ArgoGoArgoMcpToolsetToolSpecs = []tools.ToolSpec{tools.ToolSpec{
-	Description: "List workflows in specified namespace(s) with optional status filtering",
+	Description: "List workflows in one Kubernetes namespace, optionally filtered by phase",
 	Meta:        map[string][]string{"readOnlyHint": []string{"true"}},
 	Name:        "list_workflows",
 	Payload: tools.TypeSpec{
@@ -45,7 +45,7 @@ var ArgoGoArgoMcpToolsetToolSpecs = []tools.ToolSpec{tools.ToolSpec{
 			},
 		},
 		Name:   "*argo.ListWorkflowsPayload",
-		Schema: []byte("{\"type\":\"object\",\"properties\":{\"limit\":{\"type\":\"integer\",\"description\":\"Maximum number of workflows to return\",\"default\":50,\"minimum\":1,\"maximum\":9223372036854775807},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace to query\"},\"status\":{\"type\":\"string\",\"description\":\"Optional workflow status filter\",\"enum\":[\"Running\",\"Succeeded\",\"Failed\",\"Pending\",\"Error\"]}},\"additionalProperties\":false}"),
+		Schema: []byte("{\"type\":\"object\",\"properties\":{\"limit\":{\"type\":\"integer\",\"description\":\"Maximum number of workflows to return\",\"default\":50,\"minimum\":1,\"maximum\":9223372036854775807},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace to query; defaults to the server's ARGO_NAMESPACE\"},\"status\":{\"type\":\"string\",\"description\":\"Optional workflow status filter\",\"enum\":[\"Running\",\"Succeeded\",\"Failed\",\"Pending\",\"Error\"]}},\"additionalProperties\":false}"),
 	},
 	Result: tools.TypeSpec{
 		Codec: tools.JSONCodec[any]{
@@ -69,7 +69,7 @@ var ArgoGoArgoMcpToolsetToolSpecs = []tools.ToolSpec{tools.ToolSpec{
 	Service: "argo",
 	Toolset: "argo.go-argo-mcp",
 }, tools.ToolSpec{
-	Description: "Get detailed information about a specific workflow",
+	Description: "Get status, timing, metadata, parameters, and outputs for one workflow",
 	Meta:        map[string][]string{"readOnlyHint": []string{"true"}},
 	Name:        "get_workflow",
 	Payload: tools.TypeSpec{
@@ -89,7 +89,7 @@ var ArgoGoArgoMcpToolsetToolSpecs = []tools.ToolSpec{tools.ToolSpec{
 			},
 		},
 		Name:   "*argo.GetWorkflowPayload",
-		Schema: []byte("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
+		Schema: []byte("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Exact workflow name; use list_workflows to discover names\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"}},\"additionalProperties\":false}"),
 	},
 	Result: tools.TypeSpec{
 		Codec: tools.JSONCodec[any]{
@@ -113,7 +113,7 @@ var ArgoGoArgoMcpToolsetToolSpecs = []tools.ToolSpec{tools.ToolSpec{
 	Service: "argo",
 	Toolset: "argo.go-argo-mcp",
 }, tools.ToolSpec{
-	Description: "Get logs from a workflow's pods",
+	Description: "Get the latest matching log entries from a workflow's pods",
 	Meta:        map[string][]string{"readOnlyHint": []string{"true"}},
 	Name:        "get_workflow_logs",
 	Payload: tools.TypeSpec{
@@ -133,7 +133,7 @@ var ArgoGoArgoMcpToolsetToolSpecs = []tools.ToolSpec{tools.ToolSpec{
 			},
 		},
 		Name:   "*argo.GetWorkflowLogsPayload",
-		Schema: []byte("{\"type\":\"object\",\"required\":[\"workflow_name\"],\"properties\":{\"container\":{\"type\":\"string\",\"default\":\"main\"},\"max_lines\":{\"type\":\"integer\",\"description\":\"Maximum lines to return; zero returns all lines\",\"default\":200,\"minimum\":0,\"maximum\":9223372036854775807},\"namespace\":{\"type\":\"string\"},\"pod_name\":{\"type\":\"string\"},\"search\":{\"type\":\"string\"},\"workflow_name\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
+		Schema: []byte("{\"type\":\"object\",\"required\":[\"workflow_name\"],\"properties\":{\"container\":{\"type\":\"string\",\"description\":\"Container name; defaults to main\",\"default\":\"main\"},\"max_lines\":{\"type\":\"integer\",\"description\":\"Maximum lines to return; zero returns all lines\",\"default\":200,\"minimum\":0,\"maximum\":9223372036854775807},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"},\"pod_name\":{\"type\":\"string\",\"description\":\"Optional exact pod name; omit to collect logs across workflow pods\"},\"search\":{\"type\":\"string\",\"description\":\"Optional case-insensitive search across log text and pod names\"},\"workflow_name\":{\"type\":\"string\",\"description\":\"Exact workflow name; use list_workflows to discover names\"}},\"additionalProperties\":false}"),
 	},
 	Result: tools.TypeSpec{
 		Codec: tools.JSONCodec[any]{
@@ -157,7 +157,7 @@ var ArgoGoArgoMcpToolsetToolSpecs = []tools.ToolSpec{tools.ToolSpec{
 	Service: "argo",
 	Toolset: "argo.go-argo-mcp",
 }, tools.ToolSpec{
-	Description: "Terminate a running workflow (DESTRUCTIVE - requires confirmation)",
+	Description: "Preview or terminate a workflow; requires MCP_ALLOW_DESTRUCTIVE and may require confirmation",
 	Meta:        map[string][]string{"destructiveHint": []string{"true"}},
 	Name:        "terminate_workflow",
 	Payload: tools.TypeSpec{
@@ -177,7 +177,7 @@ var ArgoGoArgoMcpToolsetToolSpecs = []tools.ToolSpec{tools.ToolSpec{
 			},
 		},
 		Name:   "*argo.TerminateWorkflowPayload",
-		Schema: []byte("{\"type\":\"object\",\"required\":[\"name\",\"reason\"],\"properties\":{\"confirmation_token\":{\"type\":\"string\"},\"dry_run\":{\"type\":\"boolean\",\"description\":\"Preview mode; defaults to true\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
+		Schema: []byte("{\"type\":\"object\",\"required\":[\"name\",\"reason\"],\"properties\":{\"confirmation_token\":{\"type\":\"string\",\"description\":\"Single-use token returned by a matching dry-run preview\"},\"dry_run\":{\"type\":\"boolean\",\"description\":\"Preview mode; defaults to true and does not call Argo\"},\"name\":{\"type\":\"string\",\"description\":\"Exact workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"},\"reason\":{\"type\":\"string\",\"description\":\"Operator-visible reason for termination and part of confirmation scope\"}},\"additionalProperties\":false}"),
 	},
 	Result: tools.TypeSpec{
 		Codec: tools.JSONCodec[any]{
@@ -201,7 +201,7 @@ var ArgoGoArgoMcpToolsetToolSpecs = []tools.ToolSpec{tools.ToolSpec{
 	Service: "argo",
 	Toolset: "argo.go-argo-mcp",
 }, tools.ToolSpec{
-	Description: "Retry a failed workflow",
+	Description: "Retry a workflow; requires MCP_ALLOW_MUTATIONS",
 	Meta:        map[string][]string{"destructiveHint": []string{"true"}},
 	Name:        "retry_workflow",
 	Payload: tools.TypeSpec{
@@ -221,7 +221,7 @@ var ArgoGoArgoMcpToolsetToolSpecs = []tools.ToolSpec{tools.ToolSpec{
 			},
 		},
 		Name:   "*argo.RetryWorkflowPayload",
-		Schema: []byte("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"restart_successful\":{\"type\":\"boolean\",\"description\":\"Also restart successful steps; defaults to false\"}},\"additionalProperties\":false}"),
+		Schema: []byte("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Exact workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"},\"restart_successful\":{\"type\":\"boolean\",\"description\":\"Also restart successful steps; defaults to false\"}},\"additionalProperties\":false}"),
 	},
 	Result: tools.TypeSpec{
 		Codec: tools.JSONCodec[any]{
@@ -245,7 +245,7 @@ var ArgoGoArgoMcpToolsetToolSpecs = []tools.ToolSpec{tools.ToolSpec{
 	Service: "argo",
 	Toolset: "argo.go-argo-mcp",
 }, tools.ToolSpec{
-	Description: "List CronWorkflows in namespace(s)",
+	Description: "List CronWorkflows in one Kubernetes namespace",
 	Meta:        map[string][]string{"readOnlyHint": []string{"true"}},
 	Name:        "list_cron_workflows",
 	Payload: tools.TypeSpec{
@@ -265,7 +265,7 @@ var ArgoGoArgoMcpToolsetToolSpecs = []tools.ToolSpec{tools.ToolSpec{
 			},
 		},
 		Name:   "*argo.ListCronWorkflowsPayload",
-		Schema: []byte("{\"type\":\"object\",\"properties\":{\"namespace\":{\"type\":\"string\"},\"suspended\":{\"type\":\"boolean\"}},\"additionalProperties\":false}"),
+		Schema: []byte("{\"type\":\"object\",\"properties\":{\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"},\"suspended\":{\"type\":\"boolean\",\"description\":\"Optional suspension-state filter\"}},\"additionalProperties\":false}"),
 	},
 	Result: tools.TypeSpec{
 		Codec: tools.JSONCodec[any]{
@@ -289,7 +289,7 @@ var ArgoGoArgoMcpToolsetToolSpecs = []tools.ToolSpec{tools.ToolSpec{
 	Service: "argo",
 	Toolset: "argo.go-argo-mcp",
 }, tools.ToolSpec{
-	Description: "Get CronWorkflow details including schedule and last execution",
+	Description: "Get CronWorkflow schedules, timezone, suspension state, and last and next scheduled times",
 	Meta:        map[string][]string{"readOnlyHint": []string{"true"}},
 	Name:        "get_cron_workflow",
 	Payload: tools.TypeSpec{
@@ -309,7 +309,7 @@ var ArgoGoArgoMcpToolsetToolSpecs = []tools.ToolSpec{tools.ToolSpec{
 			},
 		},
 		Name:   "*argo.GetCronWorkflowPayload",
-		Schema: []byte("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
+		Schema: []byte("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Exact CronWorkflow name; use list_cron_workflows to discover names\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"}},\"additionalProperties\":false}"),
 	},
 	Result: tools.TypeSpec{
 		Codec: tools.JSONCodec[any]{
@@ -333,7 +333,7 @@ var ArgoGoArgoMcpToolsetToolSpecs = []tools.ToolSpec{tools.ToolSpec{
 	Service: "argo",
 	Toolset: "argo.go-argo-mcp",
 }, tools.ToolSpec{
-	Description: "Get execution history of a CronWorkflow",
+	Description: "Get recent workflows created by an existing CronWorkflow",
 	Meta:        map[string][]string{"readOnlyHint": []string{"true"}},
 	Name:        "get_cron_history",
 	Payload: tools.TypeSpec{
@@ -353,7 +353,7 @@ var ArgoGoArgoMcpToolsetToolSpecs = []tools.ToolSpec{tools.ToolSpec{
 			},
 		},
 		Name:   "*argo.GetCronHistoryPayload",
-		Schema: []byte("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"limit\":{\"type\":\"integer\",\"default\":10,\"minimum\":1,\"maximum\":9223372036854775807},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
+		Schema: []byte("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"limit\":{\"type\":\"integer\",\"description\":\"Maximum history entries to return\",\"default\":10,\"minimum\":1,\"maximum\":9223372036854775807},\"name\":{\"type\":\"string\",\"description\":\"Exact CronWorkflow name; use list_cron_workflows to discover names\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"}},\"additionalProperties\":false}"),
 	},
 	Result: tools.TypeSpec{
 		Codec: tools.JSONCodec[any]{
@@ -377,7 +377,7 @@ var ArgoGoArgoMcpToolsetToolSpecs = []tools.ToolSpec{tools.ToolSpec{
 	Service: "argo",
 	Toolset: "argo.go-argo-mcp",
 }, tools.ToolSpec{
-	Description: "Suspend or resume a CronWorkflow",
+	Description: "Suspend or resume a CronWorkflow; requires MCP_ALLOW_MUTATIONS",
 	Meta:        map[string][]string{"destructiveHint": []string{"true"}},
 	Name:        "toggle_cron_suspension",
 	Payload: tools.TypeSpec{
@@ -397,7 +397,7 @@ var ArgoGoArgoMcpToolsetToolSpecs = []tools.ToolSpec{tools.ToolSpec{
 			},
 		},
 		Name:   "*argo.ToggleCronSuspensionPayload",
-		Schema: []byte("{\"type\":\"object\",\"required\":[\"name\",\"suspend\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"suspend\":{\"type\":\"boolean\"}},\"additionalProperties\":false}"),
+		Schema: []byte("{\"type\":\"object\",\"required\":[\"name\",\"suspend\"],\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Exact CronWorkflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"},\"suspend\":{\"type\":\"boolean\",\"description\":\"True to suspend scheduling; false to resume scheduling\"}},\"additionalProperties\":false}"),
 	},
 	Result: tools.TypeSpec{
 		Codec: tools.JSONCodec[any]{
@@ -421,7 +421,7 @@ var ArgoGoArgoMcpToolsetToolSpecs = []tools.ToolSpec{tools.ToolSpec{
 	Service: "argo",
 	Toolset: "argo.go-argo-mcp",
 }, tools.ToolSpec{
-	Description: "List WorkflowTemplates in namespace",
+	Description: "List WorkflowTemplates in one Kubernetes namespace",
 	Meta:        map[string][]string{"readOnlyHint": []string{"true"}},
 	Name:        "list_workflow_templates",
 	Payload: tools.TypeSpec{
@@ -441,7 +441,7 @@ var ArgoGoArgoMcpToolsetToolSpecs = []tools.ToolSpec{tools.ToolSpec{
 			},
 		},
 		Name:   "*argo.ListWorkflowTemplatesPayload",
-		Schema: []byte("{\"type\":\"object\",\"properties\":{\"label_selector\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
+		Schema: []byte("{\"type\":\"object\",\"properties\":{\"label_selector\":{\"type\":\"string\",\"description\":\"Optional Kubernetes label selector\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"}},\"additionalProperties\":false}"),
 	},
 	Result: tools.TypeSpec{
 		Codec: tools.JSONCodec[any]{
@@ -465,7 +465,7 @@ var ArgoGoArgoMcpToolsetToolSpecs = []tools.ToolSpec{tools.ToolSpec{
 	Service: "argo",
 	Toolset: "argo.go-argo-mcp",
 }, tools.ToolSpec{
-	Description: "Get WorkflowTemplate details",
+	Description: "Get one WorkflowTemplate's entrypoint and template names",
 	Meta:        map[string][]string{"readOnlyHint": []string{"true"}},
 	Name:        "get_workflow_template",
 	Payload: tools.TypeSpec{
@@ -485,7 +485,7 @@ var ArgoGoArgoMcpToolsetToolSpecs = []tools.ToolSpec{tools.ToolSpec{
 			},
 		},
 		Name:   "*argo.GetWorkflowTemplatePayload",
-		Schema: []byte("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
+		Schema: []byte("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Exact WorkflowTemplate name; use list_workflow_templates to discover names\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"}},\"additionalProperties\":false}"),
 	},
 	Result: tools.TypeSpec{
 		Codec: tools.JSONCodec[any]{
@@ -529,7 +529,7 @@ var ArgoGoArgoMcpToolsetToolSpecs = []tools.ToolSpec{tools.ToolSpec{
 			},
 		},
 		Name:   "*argo.ListClusterWorkflowTemplatesPayload",
-		Schema: []byte("{\"type\":\"object\",\"properties\":{\"label_selector\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
+		Schema: []byte("{\"type\":\"object\",\"properties\":{\"label_selector\":{\"type\":\"string\",\"description\":\"Optional Kubernetes label selector\"}},\"additionalProperties\":false}"),
 	},
 	Result: tools.TypeSpec{
 		Codec: tools.JSONCodec[any]{
@@ -553,7 +553,7 @@ var ArgoGoArgoMcpToolsetToolSpecs = []tools.ToolSpec{tools.ToolSpec{
 	Service: "argo",
 	Toolset: "argo.go-argo-mcp",
 }, tools.ToolSpec{
-	Description: "Get ClusterWorkflowTemplate details",
+	Description: "Get one ClusterWorkflowTemplate's entrypoint and template names",
 	Meta:        map[string][]string{"readOnlyHint": []string{"true"}},
 	Name:        "get_cluster_workflow_template",
 	Payload: tools.TypeSpec{
@@ -573,7 +573,7 @@ var ArgoGoArgoMcpToolsetToolSpecs = []tools.ToolSpec{tools.ToolSpec{
 			},
 		},
 		Name:   "*argo.GetClusterWorkflowTemplatePayload",
-		Schema: []byte("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"}},\"additionalProperties\":false}"),
+		Schema: []byte("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Exact ClusterWorkflowTemplate name; use list_cluster_workflow_templates to discover names\"}},\"additionalProperties\":false}"),
 	},
 	Result: tools.TypeSpec{
 		Codec: tools.JSONCodec[any]{
@@ -692,43 +692,43 @@ func ArgoGoArgoMcpToolsetRetryHint(toolName tools.Ident, err error) *planner.Ret
 			var example string
 			switch key {
 			case "list_workflows":
-				schemaJSON = "{\"type\":\"object\",\"properties\":{\"limit\":{\"type\":\"integer\",\"description\":\"Maximum number of workflows to return\",\"default\":50,\"minimum\":1,\"maximum\":9223372036854775807},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace to query\"},\"status\":{\"type\":\"string\",\"description\":\"Optional workflow status filter\",\"enum\":[\"Running\",\"Succeeded\",\"Failed\",\"Pending\",\"Error\"]}},\"additionalProperties\":false}"
+				schemaJSON = "{\"type\":\"object\",\"properties\":{\"limit\":{\"type\":\"integer\",\"description\":\"Maximum number of workflows to return\",\"default\":50,\"minimum\":1,\"maximum\":9223372036854775807},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace to query; defaults to the server's ARGO_NAMESPACE\"},\"status\":{\"type\":\"string\",\"description\":\"Optional workflow status filter\",\"enum\":[\"Running\",\"Succeeded\",\"Failed\",\"Pending\",\"Error\"]}},\"additionalProperties\":false}"
 				example = "{\"limit\":0}"
 			case "get_workflow":
-				schemaJSON = "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}"
+				schemaJSON = "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Exact workflow name; use list_workflows to discover names\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"}},\"additionalProperties\":false}"
 				example = "{\"name\":\"example\"}"
 			case "get_workflow_logs":
-				schemaJSON = "{\"type\":\"object\",\"required\":[\"workflow_name\"],\"properties\":{\"container\":{\"type\":\"string\",\"default\":\"main\"},\"max_lines\":{\"type\":\"integer\",\"description\":\"Maximum lines to return; zero returns all lines\",\"default\":200,\"minimum\":0,\"maximum\":9223372036854775807},\"namespace\":{\"type\":\"string\"},\"pod_name\":{\"type\":\"string\"},\"search\":{\"type\":\"string\"},\"workflow_name\":{\"type\":\"string\"}},\"additionalProperties\":false}"
+				schemaJSON = "{\"type\":\"object\",\"required\":[\"workflow_name\"],\"properties\":{\"container\":{\"type\":\"string\",\"description\":\"Container name; defaults to main\",\"default\":\"main\"},\"max_lines\":{\"type\":\"integer\",\"description\":\"Maximum lines to return; zero returns all lines\",\"default\":200,\"minimum\":0,\"maximum\":9223372036854775807},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"},\"pod_name\":{\"type\":\"string\",\"description\":\"Optional exact pod name; omit to collect logs across workflow pods\"},\"search\":{\"type\":\"string\",\"description\":\"Optional case-insensitive search across log text and pod names\"},\"workflow_name\":{\"type\":\"string\",\"description\":\"Exact workflow name; use list_workflows to discover names\"}},\"additionalProperties\":false}"
 				example = "{\"container\":\"example\",\"max_lines\":0,\"workflow_name\":\"example\"}"
 			case "terminate_workflow":
-				schemaJSON = "{\"type\":\"object\",\"required\":[\"name\",\"reason\"],\"properties\":{\"confirmation_token\":{\"type\":\"string\"},\"dry_run\":{\"type\":\"boolean\",\"description\":\"Preview mode; defaults to true\"},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"}},\"additionalProperties\":false}"
+				schemaJSON = "{\"type\":\"object\",\"required\":[\"name\",\"reason\"],\"properties\":{\"confirmation_token\":{\"type\":\"string\",\"description\":\"Single-use token returned by a matching dry-run preview\"},\"dry_run\":{\"type\":\"boolean\",\"description\":\"Preview mode; defaults to true and does not call Argo\"},\"name\":{\"type\":\"string\",\"description\":\"Exact workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"},\"reason\":{\"type\":\"string\",\"description\":\"Operator-visible reason for termination and part of confirmation scope\"}},\"additionalProperties\":false}"
 				example = "{\"name\":\"example\",\"reason\":\"example\"}"
 			case "retry_workflow":
-				schemaJSON = "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"restart_successful\":{\"type\":\"boolean\",\"description\":\"Also restart successful steps; defaults to false\"}},\"additionalProperties\":false}"
+				schemaJSON = "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Exact workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"},\"restart_successful\":{\"type\":\"boolean\",\"description\":\"Also restart successful steps; defaults to false\"}},\"additionalProperties\":false}"
 				example = "{\"name\":\"example\"}"
 			case "list_cron_workflows":
-				schemaJSON = "{\"type\":\"object\",\"properties\":{\"namespace\":{\"type\":\"string\"},\"suspended\":{\"type\":\"boolean\"}},\"additionalProperties\":false}"
+				schemaJSON = "{\"type\":\"object\",\"properties\":{\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"},\"suspended\":{\"type\":\"boolean\",\"description\":\"Optional suspension-state filter\"}},\"additionalProperties\":false}"
 				example = "{}"
 			case "get_cron_workflow":
-				schemaJSON = "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}"
+				schemaJSON = "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Exact CronWorkflow name; use list_cron_workflows to discover names\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"}},\"additionalProperties\":false}"
 				example = "{\"name\":\"example\"}"
 			case "get_cron_history":
-				schemaJSON = "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"limit\":{\"type\":\"integer\",\"default\":10,\"minimum\":1,\"maximum\":9223372036854775807},\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}"
+				schemaJSON = "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"limit\":{\"type\":\"integer\",\"description\":\"Maximum history entries to return\",\"default\":10,\"minimum\":1,\"maximum\":9223372036854775807},\"name\":{\"type\":\"string\",\"description\":\"Exact CronWorkflow name; use list_cron_workflows to discover names\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"}},\"additionalProperties\":false}"
 				example = "{\"limit\":0,\"name\":\"example\"}"
 			case "toggle_cron_suspension":
-				schemaJSON = "{\"type\":\"object\",\"required\":[\"name\",\"suspend\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"},\"suspend\":{\"type\":\"boolean\"}},\"additionalProperties\":false}"
+				schemaJSON = "{\"type\":\"object\",\"required\":[\"name\",\"suspend\"],\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Exact CronWorkflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"},\"suspend\":{\"type\":\"boolean\",\"description\":\"True to suspend scheduling; false to resume scheduling\"}},\"additionalProperties\":false}"
 				example = "{\"name\":\"example\",\"suspend\":false}"
 			case "list_workflow_templates":
-				schemaJSON = "{\"type\":\"object\",\"properties\":{\"label_selector\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}"
+				schemaJSON = "{\"type\":\"object\",\"properties\":{\"label_selector\":{\"type\":\"string\",\"description\":\"Optional Kubernetes label selector\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"}},\"additionalProperties\":false}"
 				example = "{}"
 			case "get_workflow_template":
-				schemaJSON = "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"},\"namespace\":{\"type\":\"string\"}},\"additionalProperties\":false}"
+				schemaJSON = "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Exact WorkflowTemplate name; use list_workflow_templates to discover names\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"}},\"additionalProperties\":false}"
 				example = "{\"name\":\"example\"}"
 			case "list_cluster_workflow_templates":
-				schemaJSON = "{\"type\":\"object\",\"properties\":{\"label_selector\":{\"type\":\"string\"}},\"additionalProperties\":false}"
+				schemaJSON = "{\"type\":\"object\",\"properties\":{\"label_selector\":{\"type\":\"string\",\"description\":\"Optional Kubernetes label selector\"}},\"additionalProperties\":false}"
 				example = "{}"
 			case "get_cluster_workflow_template":
-				schemaJSON = "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\"}},\"additionalProperties\":false}"
+				schemaJSON = "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Exact ClusterWorkflowTemplate name; use list_cluster_workflow_templates to discover names\"}},\"additionalProperties\":false}"
 				example = "{\"name\":\"example\"}"
 			}
 			prompt := retry.BuildRepairPrompt("tools/call:"+key, rpcErr.Message, example, schemaJSON)

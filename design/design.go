@@ -54,7 +54,9 @@ var ListWorkflowsResult = Type("ListWorkflowsResult", func() {
 	Attribute("namespace", String, "Kubernetes namespace queried")
 	Attribute("status", String, "Applied workflow status filter")
 	Attribute("source", String, "Data source; always argo for live results")
-	Required("workflows", "count", "source")
+	Attribute("continue", String, "Opaque continuation token for the next page; replay it with the same filters and limit")
+	Attribute("has_more", Boolean, "Whether another page is available")
+	Required("workflows", "count", "source", "has_more")
 })
 
 var ActionResult = Type("ActionResult", func() {
@@ -86,7 +88,9 @@ var ListCronWorkflowsResult = Type("ListCronWorkflowsResult", func() {
 	Attribute("namespace", String, "Kubernetes namespace queried")
 	Attribute("suspended", Boolean, "Applied suspension filter")
 	Attribute("source", String, "Data source; always argo for live results")
-	Required("cron_workflows", "count", "source")
+	Attribute("continue", String, "Opaque continuation token for the next page; replay it with the same filters and limit")
+	Attribute("has_more", Boolean, "Whether another page is available")
+	Required("cron_workflows", "count", "source", "has_more")
 })
 
 var CronWorkflowDetailResult = Type("CronWorkflowDetailResult", func() {
@@ -117,7 +121,9 @@ var CronHistoryResult = Type("CronHistoryResult", func() {
 	Attribute("history", ArrayOf(CronHistoryEntry), "Recent workflows owned by this CronWorkflow")
 	Attribute("count", Int, "Number of history entries returned")
 	Attribute("source", String, "Data source; always argo for live results")
-	Required("name", "history", "count", "source")
+	Attribute("continue", String, "Opaque continuation token for the next page; replay it with the same limit")
+	Attribute("has_more", Boolean, "Whether another page is available")
+	Required("name", "history", "count", "source", "has_more")
 })
 
 var TemplateSummary = Type("TemplateSummary", func() {
@@ -133,7 +139,9 @@ var ListWorkflowTemplatesResult = Type("ListWorkflowTemplatesResult", func() {
 	Attribute("namespace", String, "Kubernetes namespace queried")
 	Attribute("label_selector", String, "Applied Kubernetes label selector")
 	Attribute("source", String, "Data source; always argo for live results")
-	Required("templates", "count", "source")
+	Attribute("continue", String, "Opaque continuation token for the next page; replay it with the same filters and limit")
+	Attribute("has_more", Boolean, "Whether another page is available")
+	Required("templates", "count", "source", "has_more")
 })
 
 var WorkflowTemplateDetailResult = Type("WorkflowTemplateDetailResult", func() {
@@ -156,7 +164,9 @@ var ListClusterWorkflowTemplatesResult = Type("ListClusterWorkflowTemplatesResul
 	Attribute("count", Int, "Number of ClusterWorkflowTemplates returned")
 	Attribute("label_selector", String, "Applied Kubernetes label selector")
 	Attribute("source", String, "Data source; always argo for live results")
-	Required("templates", "count", "source")
+	Attribute("continue", String, "Opaque continuation token for the next page; replay it with the same filters and limit")
+	Attribute("has_more", Boolean, "Whether another page is available")
+	Required("templates", "count", "source", "has_more")
 })
 
 var ClusterWorkflowTemplateDetailResult = Type("ClusterWorkflowTemplateDetailResult", func() {
@@ -236,10 +246,11 @@ var _ = Service("argo", func() {
 			Attribute("status", String, "Optional workflow status filter", func() {
 				Enum("Running", "Succeeded", "Failed", "Pending", "Error")
 			})
-			Attribute("limit", Int, "Maximum number of workflows to return", func() {
-				Default(50)
+			Attribute("limit", Int, "Maximum number of workflows to return; defaults to 50 when omitted", func() {
 				Minimum(1)
+				Maximum(200)
 			})
+			Attribute("continue", String, "Opaque continuation token returned by a previous call; replay with the same filters and limit")
 		})
 		Result(ListWorkflowsResult)
 		Tool("list_workflows", "List workflows in one Kubernetes namespace, optionally filtered by phase")
@@ -310,6 +321,11 @@ var _ = Service("argo", func() {
 		Payload(func() {
 			Attribute("namespace", String, "Kubernetes namespace; defaults to the server's ARGO_NAMESPACE")
 			Attribute("suspended", Boolean, "Optional suspension-state filter")
+			Attribute("limit", Int, "Maximum number of CronWorkflows to return; defaults to 50 when omitted", func() {
+				Minimum(1)
+				Maximum(200)
+			})
+			Attribute("continue", String, "Opaque continuation token returned by a previous call; replay with the same filters and limit")
 		})
 		Result(ListCronWorkflowsResult)
 		Tool("list_cron_workflows", "List CronWorkflows in one Kubernetes namespace")
@@ -333,10 +349,11 @@ var _ = Service("argo", func() {
 		Payload(func() {
 			Attribute("namespace", String, "Kubernetes namespace; defaults to the server's ARGO_NAMESPACE")
 			Attribute("name", String, "Exact CronWorkflow name; use list_cron_workflows to discover names")
-			Attribute("limit", Int, "Maximum history entries to return", func() {
-				Default(10)
+			Attribute("limit", Int, "Maximum history entries to return; defaults to 10 when omitted", func() {
 				Minimum(1)
+				Maximum(200)
 			})
+			Attribute("continue", String, "Opaque continuation token returned by a previous call; replay with the same limit")
 			Required("name")
 		})
 		Result(CronHistoryResult)
@@ -362,6 +379,11 @@ var _ = Service("argo", func() {
 		Payload(func() {
 			Attribute("namespace", String, "Kubernetes namespace; defaults to the server's ARGO_NAMESPACE")
 			Attribute("label_selector", String, "Optional Kubernetes label selector")
+			Attribute("limit", Int, "Maximum number of WorkflowTemplates to return; defaults to 50 when omitted", func() {
+				Minimum(1)
+				Maximum(200)
+			})
+			Attribute("continue", String, "Opaque continuation token returned by a previous call; replay with the same filters and limit")
 		})
 		Result(ListWorkflowTemplatesResult)
 		Tool("list_workflow_templates", "List WorkflowTemplates in one Kubernetes namespace")
@@ -384,6 +406,11 @@ var _ = Service("argo", func() {
 		Meta("mcp:annotation:readOnlyHint", "true")
 		Payload(func() {
 			Attribute("label_selector", String, "Optional Kubernetes label selector")
+			Attribute("limit", Int, "Maximum number of ClusterWorkflowTemplates to return; defaults to 50 when omitted", func() {
+				Minimum(1)
+				Maximum(200)
+			})
+			Attribute("continue", String, "Opaque continuation token returned by a previous call; replay with the same filters and limit")
 		})
 		Result(ListClusterWorkflowTemplatesResult)
 		Tool("list_cluster_workflow_templates", "List ClusterWorkflowTemplates (cluster-scoped)")

@@ -23,6 +23,7 @@ import (
 	mcpargo "github.com/CaliLuke/go-argo-mcp/gen/mcp_argo"
 	"github.com/CaliLuke/go-argo-mcp/internal/argoapi"
 	"github.com/CaliLuke/go-argo-mcp/internal/mcpaudit"
+	"github.com/CaliLuke/go-argo-mcp/internal/mcpvalidation"
 	"github.com/CaliLuke/go-argo-mcp/internal/observability"
 	"github.com/CaliLuke/go-argo-mcp/internal/service"
 )
@@ -75,6 +76,7 @@ func main() {
 
 	adapterOptions := &mcpargo.MCPAdapterOptions{
 		StructuredStreamJSON: true,
+		ToolCallInterceptors: []mcpargo.ToolCallInterceptor{mcpvalidation.PaginationLimits()},
 		ErrorMapper: func(err error) error {
 			var named loom.LoomErrorNamer
 			if errors.As(err, &named) {

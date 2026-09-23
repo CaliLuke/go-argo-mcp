@@ -17,13 +17,13 @@ func TestCompatibilityWorkflowFixtures(t *testing.T) {
 		"/api/v1/workflows/argo-ci/build-123": "workflow-detail.json",
 	})
 
-	listed, err := client.ListWorkflows(context.Background(), "argo-ci", "", 20)
+	page, err := client.ListWorkflows(context.Background(), "argo-ci", "", 20, "")
 	if err != nil {
 		t.Fatalf("ListWorkflows returned error: %v", err)
 	}
 	wantList := []WorkflowSummary{{Name: "build-123", Namespace: "argo-ci", Status: "Running", Progress: "1/2", StartedAt: "2026-09-22T16:00:00Z"}}
-	if !reflect.DeepEqual(listed, wantList) {
-		t.Fatalf("ListWorkflows mismatch:\n got %#v\nwant %#v", listed, wantList)
+	if !reflect.DeepEqual(page.Items, wantList) {
+		t.Fatalf("ListWorkflows mismatch:\n got %#v\nwant %#v", page.Items, wantList)
 	}
 
 	detail, err := client.GetWorkflow(context.Background(), "argo-ci", "build-123")
@@ -51,13 +51,13 @@ func TestCompatibilityCronWorkflowFixtures(t *testing.T) {
 		"/api/v1/cron-workflows/argo-ci/nightly": "cron-detail.json",
 	})
 
-	listed, err := client.ListCronWorkflows(context.Background(), "argo-ci", nil)
+	page, err := client.ListCronWorkflows(context.Background(), "argo-ci", nil, 50, "")
 	if err != nil {
 		t.Fatalf("ListCronWorkflows returned error: %v", err)
 	}
-	if len(listed) != 2 || listed[0].Schedule != "0 0 * * *" || listed[0].Namespace != "argo-ci" ||
-		!slices.Equal(listed[1].Schedules, []string{"0 6 * * *", "0 18 * * *"}) || !listed[1].Suspended {
-		t.Fatalf("unexpected CronWorkflow list: %#v", listed)
+	if len(page.Items) != 2 || page.Items[0].Schedule != "0 0 * * *" || page.Items[0].Namespace != "argo-ci" ||
+		!slices.Equal(page.Items[1].Schedules, []string{"0 6 * * *", "0 18 * * *"}) || !page.Items[1].Suspended {
+		t.Fatalf("unexpected CronWorkflow list: %#v", page.Items)
 	}
 
 	detail, err := client.GetCronWorkflow(context.Background(), "argo-ci", "nightly")
@@ -106,16 +106,16 @@ func TestCompatibilityTemplateFixtures(t *testing.T) {
 		"/api/v1/cluster-workflow-templates/build": "template-detail.json",
 	})
 
-	workflowTemplates, err := client.ListWorkflowTemplates(context.Background(), "argo-ci", "")
-	if err != nil || !reflect.DeepEqual(workflowTemplates, []TemplateSummary{{Name: "build", Namespace: "argo-ci", Entrypoint: "main"}}) {
+	workflowTemplates, err := client.ListWorkflowTemplates(context.Background(), "argo-ci", "", 50, "")
+	if err != nil || !reflect.DeepEqual(workflowTemplates.Items, []TemplateSummary{{Name: "build", Namespace: "argo-ci", Entrypoint: "main"}}) {
 		t.Fatalf("unexpected WorkflowTemplate list: %#v, %v", workflowTemplates, err)
 	}
 	workflowTemplate, err := client.GetWorkflowTemplate(context.Background(), "argo-ci", "build")
 	if err != nil || !slices.Equal(workflowTemplate.TemplateNames, []string{"main", "cleanup"}) || workflowTemplate.Namespace != "argo-ci" {
 		t.Fatalf("unexpected WorkflowTemplate detail: %#v, %v", workflowTemplate, err)
 	}
-	clusterTemplates, err := client.ListClusterWorkflowTemplates(context.Background(), "")
-	if err != nil || !reflect.DeepEqual(clusterTemplates, []ClusterTemplateSummary{{Name: "build", Entrypoint: "main"}}) {
+	clusterTemplates, err := client.ListClusterWorkflowTemplates(context.Background(), "", 50, "")
+	if err != nil || !reflect.DeepEqual(clusterTemplates.Items, []ClusterTemplateSummary{{Name: "build", Entrypoint: "main"}}) {
 		t.Fatalf("unexpected ClusterWorkflowTemplate list: %#v, %v", clusterTemplates, err)
 	}
 	clusterTemplate, err := client.GetClusterWorkflowTemplate(context.Background(), "build")
@@ -131,7 +131,10 @@ func TestMalformedKnownStructuralFieldsReturnDecodeErrors(t *testing.T) {
 		body    string
 		request func(*Client) error
 	}{
-		{name: "workflow list items", path: "/api/v1/workflows/argo-ci", body: `{"items":{}}`, request: func(c *Client) error { _, err := c.ListWorkflows(context.Background(), "argo-ci", "", 20); return err }},
+		{name: "workflow list items", path: "/api/v1/workflows/argo-ci", body: `{"items":{}}`, request: func(c *Client) error {
+			_, err := c.ListWorkflows(context.Background(), "argo-ci", "", 20, "")
+			return err
+		}},
 		{name: "workflow metadata", path: "/api/v1/workflows/argo-ci/build", body: `{"metadata":[],"status":{}}`, request: func(c *Client) error { _, err := c.GetWorkflow(context.Background(), "argo-ci", "build"); return err }},
 		{name: "cron schedules", path: "/api/v1/cron-workflows/argo-ci/nightly", body: `{"metadata":{"name":"nightly"},"spec":{"schedules":{}}}`, request: func(c *Client) error {
 			_, err := c.GetCronWorkflow(context.Background(), "argo-ci", "nightly")

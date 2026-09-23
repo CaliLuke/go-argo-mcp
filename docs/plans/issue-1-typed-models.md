@@ -4,6 +4,8 @@ Implement [issue #1](https://github.com/CaliLuke/go-argo-mcp/issues/1) without c
 
 ## Status
 
+- 2026-09-22 — Delivered in `37cf13b` and CI follow-up `3b3df00`; GitHub CI run `35809168543` passed all steps.
+
 - 2026-09-22 — Commit `37cf13b` pushed and issue 1 closed. CI follow-up received fresh Sol approval from `review_ci_followup`; all configured checks remain enabled.
 
 - 2026-09-22 — Post-publication CI iteration: baseline run `35768359486` failed because golangci-lint v2.12.2's staticcheck crashed on Go 1.27 with `unexpected expr: *ast.KeyValueExpr`. CI now pins golangci-lint v2.13.2 (embedding `honnef.co/go/tools` v0.8.1). In an isolated detached checkout of `37cf13b`, `actionlint` and `prek run --all-files` passed with no new linter findings; ready for fresh Sol review and parent publication.
@@ -64,4 +66,4 @@ Checklist
 - [x] Run `go test ./internal/argoapi ./internal/service ./internal/integration` and fix failures.
 - [x] Update `Makefile`, `.github/workflows/ci.yml`, and README with offline generation, pin/update instructions, optional/unknown-field behavior, and checked fixture compatibility rather than claiming untested server versions.
 - [x] Run `make generate`, `go test ./...`, and `prek run --all-files`; inspect the diff for unintended Loom contract changes.
-- [ ] Return files changed and proof results to the parent. Obtain a fresh Sol code review; resolve findings and rerun affected checks. Parent commits with `Fixes #1` and pushes after approval.
+- [x] Return files changed and proof results to the parent. Obtain a fresh Sol code review; resolve findings and rerun affected checks. Parent commits with `Fixes #1` and pushes after approval.

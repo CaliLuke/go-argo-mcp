@@ -129,6 +129,10 @@ type CronHistoryResult struct {
 	Count int `json:"count"`
 	// Data source; always argo for live results
 	Source string `json:"source"`
+	// Opaque continuation token for the next page; replay it with the same limit
+	Continue *string `json:"continue,omitempty"`
+	// Whether another page is available
+	HasMore bool `json:"has_more"`
 }
 
 // CronWorkflowDetailResult is the result type of the argo service
@@ -185,8 +189,11 @@ type GetCronHistoryPayload struct {
 	Namespace *string `json:"namespace,omitempty"`
 	// Exact CronWorkflow name; use list_cron_workflows to discover names
 	Name string `json:"name"`
-	// Maximum history entries to return
-	Limit int `json:"limit,omitempty"`
+	// Maximum history entries to return; defaults to 10 when omitted
+	Limit *int `json:"limit,omitempty"`
+	// Opaque continuation token returned by a previous call; replay with the same
+	// limit
+	Continue *string `json:"continue,omitempty"`
 }
 
 // GetCronWorkflowPayload is the payload type of the argo service
@@ -238,6 +245,12 @@ type GetWorkflowTemplatePayload struct {
 type ListClusterWorkflowTemplatesPayload struct {
 	// Optional Kubernetes label selector
 	LabelSelector *string `json:"label_selector,omitempty"`
+	// Maximum number of ClusterWorkflowTemplates to return; defaults to 50 when
+	// omitted
+	Limit *int `json:"limit,omitempty"`
+	// Opaque continuation token returned by a previous call; replay with the same
+	// filters and limit
+	Continue *string `json:"continue,omitempty"`
 }
 
 // ListClusterWorkflowTemplatesResult is the result type of the argo service
@@ -251,6 +264,11 @@ type ListClusterWorkflowTemplatesResult struct {
 	LabelSelector *string `json:"label_selector,omitempty"`
 	// Data source; always argo for live results
 	Source string `json:"source"`
+	// Opaque continuation token for the next page; replay it with the same filters
+	// and limit
+	Continue *string `json:"continue,omitempty"`
+	// Whether another page is available
+	HasMore bool `json:"has_more"`
 }
 
 // ListCronWorkflowsPayload is the payload type of the argo service
@@ -260,6 +278,11 @@ type ListCronWorkflowsPayload struct {
 	Namespace *string `json:"namespace,omitempty"`
 	// Optional suspension-state filter
 	Suspended *bool `json:"suspended,omitempty"`
+	// Maximum number of CronWorkflows to return; defaults to 50 when omitted
+	Limit *int `json:"limit,omitempty"`
+	// Opaque continuation token returned by a previous call; replay with the same
+	// filters and limit
+	Continue *string `json:"continue,omitempty"`
 }
 
 // ListCronWorkflowsResult is the result type of the argo service
@@ -275,6 +298,11 @@ type ListCronWorkflowsResult struct {
 	Suspended *bool `json:"suspended,omitempty"`
 	// Data source; always argo for live results
 	Source string `json:"source"`
+	// Opaque continuation token for the next page; replay it with the same filters
+	// and limit
+	Continue *string `json:"continue,omitempty"`
+	// Whether another page is available
+	HasMore bool `json:"has_more"`
 }
 
 // ListWorkflowTemplatesPayload is the payload type of the argo service
@@ -284,6 +312,11 @@ type ListWorkflowTemplatesPayload struct {
 	Namespace *string `json:"namespace,omitempty"`
 	// Optional Kubernetes label selector
 	LabelSelector *string `json:"label_selector,omitempty"`
+	// Maximum number of WorkflowTemplates to return; defaults to 50 when omitted
+	Limit *int `json:"limit,omitempty"`
+	// Opaque continuation token returned by a previous call; replay with the same
+	// filters and limit
+	Continue *string `json:"continue,omitempty"`
 }
 
 // ListWorkflowTemplatesResult is the result type of the argo service
@@ -299,6 +332,11 @@ type ListWorkflowTemplatesResult struct {
 	LabelSelector *string `json:"label_selector,omitempty"`
 	// Data source; always argo for live results
 	Source string `json:"source"`
+	// Opaque continuation token for the next page; replay it with the same filters
+	// and limit
+	Continue *string `json:"continue,omitempty"`
+	// Whether another page is available
+	HasMore bool `json:"has_more"`
 }
 
 // ListWorkflowsPayload is the payload type of the argo service ListWorkflows
@@ -308,8 +346,11 @@ type ListWorkflowsPayload struct {
 	Namespace *string `json:"namespace,omitempty"`
 	// Optional workflow status filter
 	Status *string `json:"status,omitempty"`
-	// Maximum number of workflows to return
-	Limit int `json:"limit,omitempty"`
+	// Maximum number of workflows to return; defaults to 50 when omitted
+	Limit *int `json:"limit,omitempty"`
+	// Opaque continuation token returned by a previous call; replay with the same
+	// filters and limit
+	Continue *string `json:"continue,omitempty"`
 }
 
 // ListWorkflowsResult is the result type of the argo service ListWorkflows
@@ -325,6 +366,11 @@ type ListWorkflowsResult struct {
 	Status *string `json:"status,omitempty"`
 	// Data source; always argo for live results
 	Source string `json:"source"`
+	// Opaque continuation token for the next page; replay it with the same filters
+	// and limit
+	Continue *string `json:"continue,omitempty"`
+	// Whether another page is available
+	HasMore bool `json:"has_more"`
 }
 
 // RetryWorkflowPayload is the payload type of the argo service RetryWorkflow

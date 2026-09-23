@@ -17,6 +17,49 @@ All 13 tools call real Argo HTTP endpoints. There are no mock fallbacks.
 
 CronWorkflow reads include every configured schedule and its timezone. `get_cron_workflow` reports the next nominal run when active; `when` and stop conditions can still prevent that run.
 
+### Collection pagination
+
+`list_workflows`, `list_cron_workflows`, `list_workflow_templates`, and
+`list_cluster_workflow_templates` return at most 50 items by default.
+`get_cron_history` returns at most 10. All five tools accept `limit` from 1 to
+200 and an optional `continue` token.
+
+Start with the filters and limit you want:
+
+```json
+{
+  "name": "list_workflows",
+  "arguments": {
+    "namespace": "argo-ci",
+    "status": "Running",
+    "limit": 25
+  }
+}
+```
+
+When the result has `"has_more": true`, pass its exact `continue` value back
+with the same limit and filters:
+
+```json
+{
+  "name": "list_workflows",
+  "arguments": {
+    "namespace": "argo-ci",
+    "status": "Running",
+    "limit": 25,
+    "continue": "opaque-token-from-the-previous-result"
+  }
+}
+```
+
+Continuation values are opaque Argo tokens. Do not trim, decode, modify, or
+reuse them with different filters or a different limit. `has_more` is true
+exactly when a nonempty continuation token is returned. Empty and exhausted
+results contain an empty array, set `has_more` to false, and omit `continue`.
+Expired or rejected tokens return an error; the server does not restart the
+scan. `get_cron_history` sorts each returned result by start time, newest first,
+but pagination does not provide a global ordering guarantee across pages.
+
 ## Install
 
 Install the native binary with Homebrew:

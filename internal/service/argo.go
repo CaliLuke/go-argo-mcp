@@ -19,6 +19,7 @@ const (
 	defaultLimit         = 50
 	defaultLogMaxLines   = 200
 	defaultCronHistLimit = 10
+	maximumListLimit     = 200
 )
 
 type Policy struct {
@@ -66,19 +67,23 @@ func (s *ArgoService) ListWorkflows(ctx context.Context, payload *genargo.ListWo
 		return nil, err
 	}
 	status := stringPtrValue(payload.Status)
-	limit := intDefault(payload.Limit, defaultLimit)
+	limit, err := collectionLimit(payload.Limit, defaultLimit)
+	if err != nil {
+		return nil, err
+	}
+	continueToken := pointerValue(payload.Continue)
 
 	client, err := s.requireClient()
 	if err != nil {
 		return nil, err
 	}
-	items, err := client.ListWorkflows(ctx, namespace, status, limit)
+	page, err := client.ListWorkflows(ctx, namespace, status, limit, continueToken)
 	if err != nil {
 		return nil, mapArgoError(err, argoTarget{action: "list", resource: "Workflows", namespace: namespace})
 	}
 
-	workflows := make([]*genargo.WorkflowSummary, 0, len(items))
-	for _, item := range items {
+	workflows := make([]*genargo.WorkflowSummary, 0, len(page.Items))
+	for _, item := range page.Items {
 		summary := &genargo.WorkflowSummary{
 			Name:      item.Name,
 			Namespace: item.Namespace,
@@ -103,6 +108,10 @@ func (s *ArgoService) ListWorkflows(ctx context.Context, payload *genargo.ListWo
 		Count:     len(workflows),
 		Namespace: strPtr(namespace),
 		Source:    "argo",
+		HasMore:   page.Continue != "",
+	}
+	if page.Continue != "" {
+		res.Continue = strPtr(page.Continue)
 	}
 	if status != "" {
 		res.Status = strPtr(status)
@@ -299,16 +308,21 @@ func (s *ArgoService) ListCronWorkflows(ctx context.Context, payload *genargo.Li
 		return nil, err
 	}
 	suspended := payload.Suspended
+	limit, err := collectionLimit(payload.Limit, defaultLimit)
+	if err != nil {
+		return nil, err
+	}
+	continueToken := pointerValue(payload.Continue)
 	client, err := s.requireClient()
 	if err != nil {
 		return nil, err
 	}
-	items, err := client.ListCronWorkflows(ctx, namespace, suspended)
+	page, err := client.ListCronWorkflows(ctx, namespace, suspended, limit, continueToken)
 	if err != nil {
 		return nil, mapArgoError(err, argoTarget{action: "list", resource: "CronWorkflows", namespace: namespace})
 	}
-	out := make([]*genargo.CronWorkflowSummary, 0, len(items))
-	for _, item := range items {
+	out := make([]*genargo.CronWorkflowSummary, 0, len(page.Items))
+	for _, item := range page.Items {
 		summary := &genargo.CronWorkflowSummary{Name: item.Name, Namespace: item.Namespace}
 		if item.Schedule != "" {
 			summary.Schedule = strPtr(item.Schedule)
@@ -327,6 +341,10 @@ func (s *ArgoService) ListCronWorkflows(ctx context.Context, payload *genargo.Li
 		Count:         len(out),
 		Namespace:     strPtr(namespace),
 		Source:        "argo",
+		HasMore:       page.Continue != "",
+	}
+	if page.Continue != "" {
+		res.Continue = strPtr(page.Continue)
 	}
 	if suspended != nil {
 		res.Suspended = suspended
@@ -403,16 +421,21 @@ func (s *ArgoService) ListWorkflowTemplates(ctx context.Context, payload *genarg
 		return nil, err
 	}
 	labelSelector := stringPtrValue(payload.LabelSelector)
+	limit, err := collectionLimit(payload.Limit, defaultLimit)
+	if err != nil {
+		return nil, err
+	}
+	continueToken := pointerValue(payload.Continue)
 	client, err := s.requireClient()
 	if err != nil {
 		return nil, err
 	}
-	items, err := client.ListWorkflowTemplates(ctx, namespace, labelSelector)
+	page, err := client.ListWorkflowTemplates(ctx, namespace, labelSelector, limit, continueToken)
 	if err != nil {
 		return nil, mapArgoError(err, argoTarget{action: "list", resource: "WorkflowTemplates", namespace: namespace})
 	}
-	out := make([]*genargo.TemplateSummary, 0, len(items))
-	for _, item := range items {
+	out := make([]*genargo.TemplateSummary, 0, len(page.Items))
+	for _, item := range page.Items {
 		summary := &genargo.TemplateSummary{Name: item.Name}
 		if item.Namespace != "" {
 			summary.Namespace = strPtr(item.Namespace)
@@ -427,6 +450,10 @@ func (s *ArgoService) ListWorkflowTemplates(ctx context.Context, payload *genarg
 		Count:     len(out),
 		Namespace: strPtr(namespace),
 		Source:    "argo",
+		HasMore:   page.Continue != "",
+	}
+	if page.Continue != "" {
+		res.Continue = strPtr(page.Continue)
 	}
 	if labelSelector != "" {
 		res.LabelSelector = strPtr(labelSelector)
@@ -467,16 +494,21 @@ func (s *ArgoService) GetWorkflowTemplate(ctx context.Context, payload *genargo.
 
 func (s *ArgoService) ListClusterWorkflowTemplates(ctx context.Context, payload *genargo.ListClusterWorkflowTemplatesPayload) (*genargo.ListClusterWorkflowTemplatesResult, error) {
 	labelSelector := stringPtrValue(payload.LabelSelector)
+	limit, err := collectionLimit(payload.Limit, defaultLimit)
+	if err != nil {
+		return nil, err
+	}
+	continueToken := pointerValue(payload.Continue)
 	client, err := s.requireClient()
 	if err != nil {
 		return nil, err
 	}
-	items, err := client.ListClusterWorkflowTemplates(ctx, labelSelector)
+	page, err := client.ListClusterWorkflowTemplates(ctx, labelSelector, limit, continueToken)
 	if err != nil {
 		return nil, mapArgoError(err, argoTarget{action: "list", resource: "ClusterWorkflowTemplates"})
 	}
-	out := make([]*genargo.ClusterWorkflowTemplateSummary, 0, len(items))
-	for _, item := range items {
+	out := make([]*genargo.ClusterWorkflowTemplateSummary, 0, len(page.Items))
+	for _, item := range page.Items {
 		summary := &genargo.ClusterWorkflowTemplateSummary{Name: item.Name}
 		if item.Entrypoint != "" {
 			summary.Entrypoint = strPtr(item.Entrypoint)
@@ -487,6 +519,10 @@ func (s *ArgoService) ListClusterWorkflowTemplates(ctx context.Context, payload 
 		Templates: out,
 		Count:     len(out),
 		Source:    "argo",
+		HasMore:   page.Continue != "",
+	}
+	if page.Continue != "" {
+		res.Continue = strPtr(page.Continue)
 	}
 	if labelSelector != "" {
 		res.LabelSelector = strPtr(labelSelector)
@@ -527,17 +563,21 @@ func (s *ArgoService) GetCronHistory(ctx context.Context, payload *genargo.GetCr
 	if name == "" {
 		return nil, fmt.Errorf("name is required")
 	}
-	limit := intDefault(payload.Limit, defaultCronHistLimit)
+	limit, err := collectionLimit(payload.Limit, defaultCronHistLimit)
+	if err != nil {
+		return nil, err
+	}
+	continueToken := pointerValue(payload.Continue)
 	client, err := s.requireClient()
 	if err != nil {
 		return nil, err
 	}
-	entries, err := client.GetCronHistory(ctx, namespace, name, limit)
+	page, err := client.GetCronHistory(ctx, namespace, name, limit, continueToken)
 	if err != nil {
 		return nil, mapArgoError(err, argoTarget{action: "get execution history for", resource: "CronWorkflow", namespace: namespace, name: name, listTool: "list_cron_workflows"})
 	}
-	out := make([]*genargo.CronHistoryEntry, 0, len(entries))
-	for _, entry := range entries {
+	out := make([]*genargo.CronHistoryEntry, 0, len(page.Items))
+	for _, entry := range page.Items {
 		item := &genargo.CronHistoryEntry{Name: entry.Name}
 		if entry.Status != "" {
 			item.Status = strPtr(entry.Status)
@@ -553,13 +593,35 @@ func (s *ArgoService) GetCronHistory(ctx context.Context, payload *genargo.GetCr
 		}
 		out = append(out, item)
 	}
-	return &genargo.CronHistoryResult{
+	res := &genargo.CronHistoryResult{
 		Name:      name,
 		Namespace: strPtr(namespace),
 		History:   out,
 		Count:     len(out),
 		Source:    "argo",
-	}, nil
+		HasMore:   page.Continue != "",
+	}
+	if page.Continue != "" {
+		res.Continue = strPtr(page.Continue)
+	}
+	return res, nil
+}
+
+func collectionLimit(limit *int, defaultValue int) (int, error) {
+	if limit == nil || *limit == 0 {
+		return defaultValue, nil
+	}
+	if *limit < 0 || *limit > maximumListLimit {
+		return 0, fmt.Errorf("limit must be between 1 and %d", maximumListLimit)
+	}
+	return *limit, nil
+}
+
+func pointerValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func (s *ArgoService) namespace(v *string) string {
@@ -757,13 +819,6 @@ func stringPtrValue(value *string) string {
 		return ""
 	}
 	return strings.TrimSpace(*value)
-}
-
-func intDefault(value, fallback int) int {
-	if value > 0 {
-		return value
-	}
-	return fallback
 }
 
 func stringDefault(value, fallback string) string {

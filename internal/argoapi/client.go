@@ -88,6 +88,18 @@ type ClusterTemplateDetail struct {
 	TemplateNames []string
 }
 
+type Page[T any] struct {
+	Items    []T
+	Continue string
+}
+
+const (
+	defaultCollectionLimit = 50
+	defaultHistoryLimit    = 10
+	maximumCollectionLimit = 200
+	maximumBackendPages    = 1000
+)
+
 type Client struct {
 	baseURL  string
 	http     *http.Client
@@ -148,49 +160,32 @@ func (c *Client) Enabled() bool {
 	return c != nil && c.baseURL != ""
 }
 
-func (c *Client) ListWorkflows(ctx context.Context, namespace, status string, limit int) ([]WorkflowSummary, error) {
-	return c.listWorkflows(ctx, namespace, status, limit, "")
+func (c *Client) ListWorkflows(ctx context.Context, namespace, status string, limit int, continueToken string) (Page[WorkflowSummary], error) {
+	return c.listWorkflows(ctx, namespace, status, limit, continueToken, "", defaultCollectionLimit)
 }
 
-func (c *Client) listWorkflows(ctx context.Context, namespace, status string, limit int, labelSelector string) ([]WorkflowSummary, error) {
+func (c *Client) listWorkflows(ctx context.Context, namespace, status string, limit int, continueToken, labelSelector string, defaultLimit int) (Page[WorkflowSummary], error) {
+	limit, err := boundedLimit(limit, defaultLimit)
+	if err != nil {
+		return Page[WorkflowSummary]{}, err
+	}
 	endpoint := c.baseURL + "/api/v1/workflows/" + url.PathEscape(namespace)
 	query := map[string]string{}
 	if labelSelector != "" {
 		query["listOptions.labelSelector"] = labelSelector
 	}
-	workflows := make([]WorkflowSummary, 0)
-	seenCursors := make(map[string]bool)
-	for {
-		pageSize := limit - len(workflows)
-		if status != "" && pageSize < 100 {
-			pageSize = 100
-		}
-		query["listOptions.limit"] = intString(pageSize)
+	return scanPages(ctx, limit, continueToken, "workflow list", func(ctx context.Context, pageSize int, cursor string) ([]models.Workflow, string, error) {
 		var resp models.WorkflowList
-		err := c.doJSON(ctx, http.MethodGet, endpoint, query, nil, &resp)
-		if err != nil {
-			return nil, err
+		return fetchListPage(ctx, c, endpoint, query, pageSize, cursor, &resp, func() ([]models.Workflow, string) {
+			return resp.Items, resp.Metadata.Continue
+		})
+	}, func(item models.Workflow) (WorkflowSummary, bool) {
+		summary := workflowSummaryFromModel(item)
+		if summary.Name == "" || status != "" && !strings.EqualFold(summary.Status, status) {
+			return WorkflowSummary{}, false
 		}
-		for _, item := range resp.Items {
-			summary := workflowSummaryFromModel(item)
-			if summary.Name == "" || status != "" && !strings.EqualFold(summary.Status, status) {
-				continue
-			}
-			workflows = append(workflows, summary)
-			if limit > 0 && len(workflows) >= limit {
-				return workflows, nil
-			}
-		}
-		cursor := resp.Metadata.Continue
-		if cursor == "" {
-			return workflows, nil
-		}
-		if seenCursors[cursor] {
-			return nil, fmt.Errorf("argo repeated workflow list continuation token")
-		}
-		seenCursors[cursor] = true
-		query["listOptions.continue"] = cursor
-	}
+		return summary, true
+	})
 }
 
 func (c *Client) GetWorkflow(ctx context.Context, namespace, name string) (*WorkflowDetail, error) {
@@ -240,11 +235,13 @@ func (c *Client) GetWorkflowLogs(ctx context.Context, namespace, workflowName, p
 		if len(payload.Error) != 0 {
 			return nil, fmt.Errorf("argo log stream returned an error")
 		}
-		result := logResult{PodName: payload.PodName, Content: payload.Content}
+		result := logResult{}
 		if !emptyJSONValue(payload.Result) {
 			if err := json.Unmarshal(payload.Result, &result); err != nil {
 				return nil, fmt.Errorf("decode Argo log stream result: %w", err)
 			}
+		} else {
+			result = logResult{PodName: payload.PodName, Content: payload.Content}
 		}
 		if result.Content == "" {
 			continue
@@ -270,15 +267,19 @@ func (c *Client) TerminateWorkflow(ctx context.Context, namespace, name string) 
 	return c.doJSON(ctx, http.MethodPut, endpoint, nil, body, nil)
 }
 
-func (c *Client) ListCronWorkflows(ctx context.Context, namespace string, suspended *bool) ([]CronWorkflowSummary, error) {
-	endpoint := c.baseURL + "/api/v1/cron-workflows/" + url.PathEscape(namespace)
-	var resp models.CronWorkflowList
-	err := c.doJSON(ctx, http.MethodGet, endpoint, nil, nil, &resp)
+func (c *Client) ListCronWorkflows(ctx context.Context, namespace string, suspended *bool, limit int, continueToken string) (Page[CronWorkflowSummary], error) {
+	limit, err := boundedLimit(limit, defaultCollectionLimit)
 	if err != nil {
-		return nil, err
+		return Page[CronWorkflowSummary]{}, err
 	}
-	results := make([]CronWorkflowSummary, 0, len(resp.Items))
-	for _, item := range resp.Items {
+	endpoint := c.baseURL + "/api/v1/cron-workflows/" + url.PathEscape(namespace)
+	query := map[string]string{}
+	return scanPages(ctx, limit, continueToken, "CronWorkflow list", func(ctx context.Context, pageSize int, cursor string) ([]models.CronWorkflow, string, error) {
+		var resp models.CronWorkflowList
+		return fetchListPage(ctx, c, endpoint, query, pageSize, cursor, &resp, func() ([]models.CronWorkflow, string) {
+			return resp.Items, resp.Metadata.Continue
+		})
+	}, func(item models.CronWorkflow) (CronWorkflowSummary, bool) {
 		summary := CronWorkflowSummary{
 			Name:      item.Metadata.Name,
 			Namespace: coalesce(item.Metadata.Namespace, namespace),
@@ -288,14 +289,13 @@ func (c *Client) ListCronWorkflows(ctx context.Context, namespace string, suspen
 			Suspended: item.Spec.Suspend,
 		}
 		if summary.Name == "" {
-			continue
+			return CronWorkflowSummary{}, false
 		}
 		if suspended != nil && summary.Suspended != *suspended {
-			continue
+			return CronWorkflowSummary{}, false
 		}
-		results = append(results, summary)
-	}
-	return results, nil
+		return summary, true
+	})
 }
 
 func (c *Client) GetCronWorkflow(ctx context.Context, namespace, name string) (*CronWorkflowDetail, error) {
@@ -343,37 +343,43 @@ func (c *Client) ToggleCronSuspension(ctx context.Context, namespace, name strin
 	return c.doJSON(ctx, http.MethodPut, endpoint, nil, body, nil)
 }
 
-func (c *Client) GetCronHistory(ctx context.Context, namespace, name string, limit int) ([]WorkflowSummary, error) {
+func (c *Client) GetCronHistory(ctx context.Context, namespace, name string, limit int, continueToken string) (Page[WorkflowSummary], error) {
+	if _, err := boundedLimit(limit, defaultHistoryLimit); err != nil {
+		return Page[WorkflowSummary]{}, err
+	}
 	if _, err := c.GetCronWorkflow(ctx, namespace, name); err != nil {
-		return nil, err
+		return Page[WorkflowSummary]{}, err
 	}
 	labelSelector := "workflows.argoproj.io/cron-workflow=" + name
-	history, err := c.listWorkflows(ctx, namespace, "", limit, labelSelector)
+	history, err := c.listWorkflows(ctx, namespace, "", limit, continueToken, labelSelector, defaultHistoryLimit)
 	if err != nil {
-		return nil, err
+		return Page[WorkflowSummary]{}, err
 	}
-	sort.SliceStable(history, func(i, j int) bool {
-		return history[i].StartedAt > history[j].StartedAt
+	sort.SliceStable(history.Items, func(i, j int) bool {
+		return history.Items[i].StartedAt > history.Items[j].StartedAt
 	})
 	return history, nil
 }
 
-func (c *Client) ListWorkflowTemplates(ctx context.Context, namespace, labelSelector string) ([]TemplateSummary, error) {
+func (c *Client) ListWorkflowTemplates(ctx context.Context, namespace, labelSelector string, limit int, continueToken string) (Page[TemplateSummary], error) {
+	limit, err := boundedLimit(limit, defaultCollectionLimit)
+	if err != nil {
+		return Page[TemplateSummary]{}, err
+	}
 	endpoint := c.baseURL + "/api/v1/workflow-templates/" + url.PathEscape(namespace)
 	query := map[string]string{}
 	if labelSelector != "" {
 		query["listOptions.labelSelector"] = labelSelector
 	}
-	var resp models.WorkflowTemplateList
-	err := c.doJSON(ctx, http.MethodGet, endpoint, query, nil, &resp)
-	if err != nil {
-		return nil, err
-	}
-	results := make([]TemplateSummary, 0, len(resp.Items))
-	for _, item := range resp.Items {
-		results = append(results, templateSummaryFromModel(item.Metadata, item.Spec, namespace))
-	}
-	return compactTemplateSummaries(results), nil
+	return scanPages(ctx, limit, continueToken, "WorkflowTemplate list", func(ctx context.Context, pageSize int, cursor string) ([]models.WorkflowTemplate, string, error) {
+		var resp models.WorkflowTemplateList
+		return fetchListPage(ctx, c, endpoint, query, pageSize, cursor, &resp, func() ([]models.WorkflowTemplate, string) {
+			return resp.Items, resp.Metadata.Continue
+		})
+	}, func(item models.WorkflowTemplate) (TemplateSummary, bool) {
+		summary := templateSummaryFromModel(item.Metadata, item.Spec, namespace)
+		return summary, summary.Name != ""
+	})
 }
 
 func (c *Client) GetWorkflowTemplate(ctx context.Context, namespace, name string) (*TemplateDetail, error) {
@@ -390,29 +396,97 @@ func (c *Client) GetWorkflowTemplate(ctx context.Context, namespace, name string
 	}, nil
 }
 
-func (c *Client) ListClusterWorkflowTemplates(ctx context.Context, labelSelector string) ([]ClusterTemplateSummary, error) {
+func (c *Client) ListClusterWorkflowTemplates(ctx context.Context, labelSelector string, limit int, continueToken string) (Page[ClusterTemplateSummary], error) {
+	limit, err := boundedLimit(limit, defaultCollectionLimit)
+	if err != nil {
+		return Page[ClusterTemplateSummary]{}, err
+	}
 	endpoint := c.baseURL + "/api/v1/cluster-workflow-templates"
 	query := map[string]string{}
 	if labelSelector != "" {
 		query["listOptions.labelSelector"] = labelSelector
 	}
-	var resp models.ClusterWorkflowTemplateList
-	err := c.doJSON(ctx, http.MethodGet, endpoint, query, nil, &resp)
-	if err != nil {
-		return nil, err
-	}
-	results := make([]ClusterTemplateSummary, 0, len(resp.Items))
-	for _, item := range resp.Items {
+	return scanPages(ctx, limit, continueToken, "ClusterWorkflowTemplate list", func(ctx context.Context, pageSize int, cursor string) ([]models.ClusterWorkflowTemplate, string, error) {
+		var resp models.ClusterWorkflowTemplateList
+		return fetchListPage(ctx, c, endpoint, query, pageSize, cursor, &resp, func() ([]models.ClusterWorkflowTemplate, string) {
+			return resp.Items, resp.Metadata.Continue
+		})
+	}, func(item models.ClusterWorkflowTemplate) (ClusterTemplateSummary, bool) {
 		name := item.Metadata.Name
 		if name == "" {
-			continue
+			return ClusterTemplateSummary{}, false
 		}
-		results = append(results, ClusterTemplateSummary{
+		return ClusterTemplateSummary{
 			Name:       name,
 			Entrypoint: item.Spec.Entrypoint,
-		})
+		}, true
+	})
+}
+
+func boundedLimit(limit, defaultLimit int) (int, error) {
+	if limit == 0 {
+		return defaultLimit, nil
 	}
-	return results, nil
+	if limit < 0 || limit > maximumCollectionLimit {
+		return 0, fmt.Errorf("limit must be between 1 and %d", maximumCollectionLimit)
+	}
+	return limit, nil
+}
+
+func setContinueQuery(query map[string]string, cursor string) {
+	if cursor == "" {
+		delete(query, "listOptions.continue")
+		return
+	}
+	query["listOptions.continue"] = cursor
+}
+
+func fetchListPage[Item, Response any](ctx context.Context, client *Client, endpoint string, query map[string]string, pageSize int, cursor string, response *Response, unpack func() ([]Item, string)) ([]Item, string, error) {
+	query["listOptions.limit"] = intString(pageSize)
+	setContinueQuery(query, cursor)
+	if err := client.doJSON(ctx, http.MethodGet, endpoint, query, nil, response); err != nil {
+		return nil, "", err
+	}
+	items, next := unpack()
+	return items, next, nil
+}
+
+func scanPages[Raw, Item any](ctx context.Context, limit int, initialCursor, resource string, fetch func(context.Context, int, string) ([]Raw, string, error), project func(Raw) (Item, bool)) (Page[Item], error) {
+	result := Page[Item]{Items: make([]Item, 0, limit)}
+	seen := map[string]struct{}{}
+	if initialCursor != "" {
+		seen[initialCursor] = struct{}{}
+	}
+	cursor := initialCursor
+	for requestCount := 0; ; requestCount++ {
+		if requestCount >= maximumBackendPages {
+			return Page[Item]{}, fmt.Errorf("argo %s exceeded %d backend pages", resource, maximumBackendPages)
+		}
+		remaining := limit - len(result.Items)
+		raw, next, err := fetch(ctx, remaining, cursor)
+		if err != nil {
+			return Page[Item]{}, err
+		}
+		if len(raw) > remaining {
+			return Page[Item]{}, fmt.Errorf("argo %s returned %d items after a limit of %d was requested; cannot continue without dropping items", resource, len(raw), remaining)
+		}
+		for _, value := range raw {
+			if item, ok := project(value); ok {
+				result.Items = append(result.Items, item)
+			}
+		}
+		if next != "" {
+			if _, exists := seen[next]; exists {
+				return Page[Item]{}, fmt.Errorf("argo repeated %s continuation token", resource)
+			}
+			seen[next] = struct{}{}
+		}
+		if len(result.Items) == limit || next == "" {
+			result.Continue = next
+			return result, nil
+		}
+		cursor = next
+	}
 }
 
 func (c *Client) GetClusterWorkflowTemplate(ctx context.Context, name string) (*ClusterTemplateDetail, error) {
@@ -536,16 +610,6 @@ func templateSummaryFromModel(metadata models.ObjectMeta, spec models.WorkflowSp
 		Namespace:  coalesce(metadata.Namespace, namespace),
 		Entrypoint: spec.Entrypoint,
 	}
-}
-
-func compactTemplateSummaries(input []TemplateSummary) []TemplateSummary {
-	out := make([]TemplateSummary, 0, len(input))
-	for _, item := range input {
-		if item.Name != "" {
-			out = append(out, item)
-		}
-	}
-	return out
 }
 
 func templateNames(spec models.WorkflowSpec) []string {
@@ -673,7 +737,7 @@ func emptyJSONValue(raw json.RawMessage) bool {
 	}
 	var object map[string]json.RawMessage
 	if err := json.Unmarshal(trimmed, &object); err != nil {
-		return true
+		return false
 	}
 	return len(object) == 0
 }

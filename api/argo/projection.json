@@ -119,6 +119,7 @@
       "source": "io.argoproj.workflow.v1alpha1.CronWorkflowList",
       "name": "CronWorkflowList",
       "fields": [
+        {"source": "metadata", "name": "Metadata", "goType": "ListMeta", "json": "metadata", "schema": "ref:io.k8s.apimachinery.pkg.apis.meta.v1.ListMeta"},
         {"source": "items", "name": "Items", "goType": "[]CronWorkflow", "json": "items", "schema": "array:ref:io.argoproj.workflow.v1alpha1.CronWorkflow"}
       ]
     },
@@ -134,6 +135,7 @@
       "source": "io.argoproj.workflow.v1alpha1.WorkflowTemplateList",
       "name": "WorkflowTemplateList",
       "fields": [
+        {"source": "metadata", "name": "Metadata", "goType": "ListMeta", "json": "metadata", "schema": "ref:io.k8s.apimachinery.pkg.apis.meta.v1.ListMeta"},
         {"source": "items", "name": "Items", "goType": "[]WorkflowTemplate", "json": "items", "schema": "array:ref:io.argoproj.workflow.v1alpha1.WorkflowTemplate"}
       ]
     },
@@ -149,6 +151,7 @@
       "source": "io.argoproj.workflow.v1alpha1.ClusterWorkflowTemplateList",
       "name": "ClusterWorkflowTemplateList",
       "fields": [
+        {"source": "metadata", "name": "Metadata", "goType": "ListMeta", "json": "metadata", "schema": "ref:io.k8s.apimachinery.pkg.apis.meta.v1.ListMeta"},
         {"source": "items", "name": "Items", "goType": "[]ClusterWorkflowTemplate", "json": "items", "schema": "array:ref:io.argoproj.workflow.v1alpha1.ClusterWorkflowTemplate"}
       ]
     },

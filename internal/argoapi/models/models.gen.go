@@ -80,7 +80,8 @@ type CronWorkflow struct {
 }
 
 type CronWorkflowList struct {
-	Items []CronWorkflow `json:"items,omitempty"`
+	Metadata ListMeta       `json:"metadata,omitempty"`
+	Items    []CronWorkflow `json:"items,omitempty"`
 }
 
 type WorkflowTemplate struct {
@@ -89,7 +90,8 @@ type WorkflowTemplate struct {
 }
 
 type WorkflowTemplateList struct {
-	Items []WorkflowTemplate `json:"items,omitempty"`
+	Metadata ListMeta           `json:"metadata,omitempty"`
+	Items    []WorkflowTemplate `json:"items,omitempty"`
 }
 
 type ClusterWorkflowTemplate struct {
@@ -98,7 +100,8 @@ type ClusterWorkflowTemplate struct {
 }
 
 type ClusterWorkflowTemplateList struct {
-	Items []ClusterWorkflowTemplate `json:"items,omitempty"`
+	Metadata ListMeta                  `json:"metadata,omitempty"`
+	Items    []ClusterWorkflowTemplate `json:"items,omitempty"`
 }
 
 type WorkflowRetryRequest struct {

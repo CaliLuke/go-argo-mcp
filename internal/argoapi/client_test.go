@@ -22,7 +22,7 @@ func TestClientUsesBearerAuthentication(t *testing.T) {
 	defer server.Close()
 
 	client := New(Config{BaseURL: server.URL, Token: "secret-token"})
-	if _, err := client.ListWorkflows(context.Background(), "default", "", 50); err != nil {
+	if _, err := client.ListWorkflows(context.Background(), "default", "", 50, ""); err != nil {
 		t.Fatalf("ListWorkflows returned error: %v", err)
 	}
 }
@@ -38,30 +38,29 @@ func TestClientUsesBasicAuthentication(t *testing.T) {
 	defer server.Close()
 
 	client := New(Config{BaseURL: server.URL, Username: "argo-user", Password: "argo-pass"})
-	if _, err := client.ListWorkflows(context.Background(), "default", "", 50); err != nil {
+	if _, err := client.ListWorkflows(context.Background(), "default", "", 50, ""); err != nil {
 		t.Fatalf("ListWorkflows returned error: %v", err)
 	}
 }
 
 func TestListWorkflowsAppliesLimitAfterLocalStatusFilter(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.URL.Query().Get("listOptions.limit"); got != "100" {
-			t.Fatalf("status filtering needs a useful page size, got %q", got)
+		if got := r.URL.Query().Get("listOptions.limit"); got != "1" {
+			t.Fatalf("status filtering must request remaining capacity, got %q", got)
 		}
 		writeJSON(t, w, map[string]any{"items": []any{
-			map[string]any{"metadata": map[string]any{"name": "done", "namespace": "argo-ci"}, "status": map[string]any{"phase": "Succeeded"}},
 			map[string]any{"metadata": map[string]any{"name": "active", "namespace": "argo-ci"}, "status": map[string]any{"phase": "Running"}},
 		}})
 	}))
 	defer server.Close()
 
 	client := New(Config{BaseURL: server.URL})
-	workflows, err := client.ListWorkflows(context.Background(), "argo-ci", "Running", 1)
+	page, err := client.ListWorkflows(context.Background(), "argo-ci", "Running", 1, "")
 	if err != nil {
 		t.Fatalf("ListWorkflows returned error: %v", err)
 	}
-	if len(workflows) != 1 || workflows[0].Name != "active" {
-		t.Fatalf("unexpected workflows: %#v", workflows)
+	if len(page.Items) != 1 || page.Items[0].Name != "active" {
+		t.Fatalf("unexpected workflows: %#v", page.Items)
 	}
 }
 
@@ -81,12 +80,12 @@ func TestListWorkflowsFindsMatchingStatusOnLaterPage(t *testing.T) {
 	defer server.Close()
 
 	client := New(Config{BaseURL: server.URL})
-	workflows, err := client.ListWorkflows(context.Background(), "argo-ci", "Running", 1)
+	page, err := client.ListWorkflows(context.Background(), "argo-ci", "Running", 1, "")
 	if err != nil {
 		t.Fatalf("ListWorkflows returned error: %v", err)
 	}
-	if len(workflows) != 1 || workflows[0].Name != "active" {
-		t.Fatalf("matching workflow on later page was lost: %#v", workflows)
+	if len(page.Items) != 1 || page.Items[0].Name != "active" {
+		t.Fatalf("matching workflow on later page was lost: %#v", page.Items)
 	}
 }
 
@@ -179,11 +178,11 @@ func TestGetCronHistoryUsesCronLabelAndLimit(t *testing.T) {
 	defer server.Close()
 
 	client := New(Config{BaseURL: server.URL})
-	history, err := client.GetCronHistory(context.Background(), "argo-ci", "nightly", 5)
+	history, err := client.GetCronHistory(context.Background(), "argo-ci", "nightly", 5, "")
 	if err != nil {
 		t.Fatalf("GetCronHistory returned error: %v", err)
 	}
-	if len(history) != 2 || history[0].Name != "nightly-002" || history[0].Status != "Failed" {
+	if len(history.Items) != 2 || history.Items[0].Name != "nightly-002" || history.Items[0].Status != "Failed" {
 		t.Fatalf("unexpected history: %#v", history)
 	}
 }
@@ -200,7 +199,7 @@ func TestGetCronHistoryDistinguishesMissingCronWorkflowFromNoRuns(t *testing.T) 
 	}))
 	defer server.Close()
 	client := New(Config{BaseURL: server.URL})
-	_, err := client.GetCronHistory(context.Background(), "argo-ci", "missing", 5)
+	_, err := client.GetCronHistory(context.Background(), "argo-ci", "missing", 5, "")
 	var httpErr *HTTPError
 	if !errors.As(err, &httpErr) || httpErr.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected not-found error, got %v", err)
@@ -226,13 +225,13 @@ func TestCronWorkflowReadsModernSchedulesAndTimezone(t *testing.T) {
 	defer server.Close()
 
 	client := New(Config{BaseURL: server.URL})
-	listed, err := client.ListCronWorkflows(context.Background(), "argo-ci", nil)
+	listed, err := client.ListCronWorkflows(context.Background(), "argo-ci", nil, 50, "")
 	if err != nil {
 		t.Fatalf("ListCronWorkflows returned error: %v", err)
 	}
-	if len(listed) != 1 || listed[0].Schedule != "0 0 * * *" ||
-		!slices.Equal(listed[0].Schedules, []string{"0 0 * * *", "0 12 * * *"}) ||
-		listed[0].Timezone != "America/Los_Angeles" {
+	if len(listed.Items) != 1 || listed.Items[0].Schedule != "0 0 * * *" ||
+		!slices.Equal(listed.Items[0].Schedules, []string{"0 0 * * *", "0 12 * * *"}) ||
+		listed.Items[0].Timezone != "America/Los_Angeles" {
 		t.Fatalf("modern cron schedule lost in list result: %#v", listed)
 	}
 	detail, err := client.GetCronWorkflow(context.Background(), "argo-ci", "nightly")
@@ -303,6 +302,39 @@ func TestWorkflowLogsFallsBackForEmptyOrNullResult(t *testing.T) {
 	want := []WorkflowLogEntry{{PodName: "empty", Content: "one"}, {PodName: "null", Content: "two"}}
 	if !reflect.DeepEqual(entries, want) {
 		t.Fatalf("unexpected log entries: got %#v want %#v", entries, want)
+	}
+}
+
+func TestWorkflowLogsDoNotMergeOuterFieldsIntoNonemptyResult(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(
+			`{"podName":"outer-pod","content":"outer-content","result":{"podName":"inner-pod"}}` + "\n" +
+				`{"podName":"outer-pod","result":{"content":"inner-content"}}` + "\n",
+		))
+	}))
+	defer server.Close()
+	client := New(Config{BaseURL: server.URL})
+	entries, err := client.GetWorkflowLogs(context.Background(), "argo-ci", "build", "", "main")
+	if err != nil {
+		t.Fatalf("GetWorkflowLogs returned error: %v", err)
+	}
+	if len(entries) != 1 || entries[0].PodName != "" || entries[0].Content != "inner-content" {
+		t.Fatalf("nonempty result inherited outer fields: %#v", entries)
+	}
+}
+
+func TestWorkflowLogsRejectMalformedNestedResultStructures(t *testing.T) {
+	for _, result := range []string{`"scalar"`, `[]`, `42`} {
+		t.Run(result, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(`{"podName":"outer","content":"must-not-fallback","result":` + result + `}` + "\n"))
+			}))
+			defer server.Close()
+			client := New(Config{BaseURL: server.URL})
+			if _, err := client.GetWorkflowLogs(context.Background(), "argo-ci", "build", "", "main"); err == nil {
+				t.Fatalf("malformed nested result %s used outer fallback", result)
+			}
+		})
 	}
 }
 

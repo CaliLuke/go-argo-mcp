@@ -4,6 +4,9 @@ Implement [issue #1](https://github.com/CaliLuke/go-argo-mcp/issues/1) without c
 
 ## Status
 
+- 2026-09-22 — Commit `37cf13b` pushed and issue 1 closed. CI follow-up received fresh Sol approval from `review_ci_followup`; all configured checks remain enabled.
+
+- 2026-09-22 — Post-publication CI iteration: baseline run `35768359486` failed because golangci-lint v2.12.2's staticcheck crashed on Go 1.27 with `unexpected expr: *ast.KeyValueExpr`. CI now pins golangci-lint v2.13.2 (embedding `honnef.co/go/tools` v0.8.1). In an isolated detached checkout of `37cf13b`, `actionlint` and `prek run --all-files` passed with no new linter findings; ready for fresh Sol review and parent publication.
 - 2026-09-22 — Fresh Sol reviewer `review_code_1` approved without findings; parent publication checks (`prek`, `git diff --check`, `actionlint`) passed.
 
 - 2026-09-22 — Draft for fresh-agent review. Baseline is commit `9bd88ed`.

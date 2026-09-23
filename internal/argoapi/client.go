@@ -98,6 +98,7 @@ const (
 	defaultHistoryLimit    = 10
 	maximumCollectionLimit = 200
 	maximumBackendPages    = 1000
+	workflowPhaseLabel     = "workflows.argoproj.io/phase"
 )
 
 type Client struct {
@@ -171,9 +172,18 @@ func (c *Client) listWorkflows(ctx context.Context, namespace, status string, li
 		return Page[WorkflowSummary]{}, err
 	}
 	endpoint := c.baseURL + "/api/v1/workflows/" + url.PathEscape(namespace)
-	query := map[string]string{}
+	// Some Argo versions' default has-more check only consults archived rows.
+	// Request remaining counts to preserve live-workflow cursors.
+	query := map[string]string{"listOptions.fieldSelector": "ext.showRemainingItemCount=true"}
 	if labelSelector != "" {
 		query["listOptions.labelSelector"] = labelSelector
+	}
+	if phase := canonicalWorkflowPhase(status); phase != "" {
+		phaseSelector := workflowPhaseLabel + "=" + phase
+		if labelSelector != "" {
+			phaseSelector = labelSelector + "," + phaseSelector
+		}
+		query["listOptions.labelSelector"] = phaseSelector
 	}
 	return scanPages(ctx, limit, continueToken, "workflow list", func(ctx context.Context, pageSize int, cursor string) ([]models.Workflow, string, error) {
 		var resp models.WorkflowList
@@ -187,6 +197,15 @@ func (c *Client) listWorkflows(ctx context.Context, namespace, status string, li
 		}
 		return summary, true
 	})
+}
+
+func canonicalWorkflowPhase(status string) string {
+	for _, phase := range []string{"Pending", "Running", "Succeeded", "Failed", "Error"} {
+		if strings.EqualFold(status, phase) {
+			return phase
+		}
+	}
+	return ""
 }
 
 func (c *Client) GetWorkflow(ctx context.Context, namespace, name string) (*WorkflowDetail, error) {

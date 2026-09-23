@@ -77,6 +77,94 @@ func TestGetCronHistoryPreservesCursorAndSortsReturnedPage(t *testing.T) {
 	}
 }
 
+func TestWorkflowListsRequestRemainingCountToPreserveContinuation(t *testing.T) {
+	tests := []struct {
+		name string
+		call func(*Client) (Page[WorkflowSummary], error)
+	}{
+		{
+			name: "workflow list",
+			call: func(client *Client) (Page[WorkflowSummary], error) {
+				return client.ListWorkflows(context.Background(), "argo-ci", "", 1, "")
+			},
+		},
+		{
+			name: "CronWorkflow history",
+			call: func(client *Client) (Page[WorkflowSummary], error) {
+				return client.GetCronHistory(context.Background(), "argo-ci", "nightly", 1, "")
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/api/v1/cron-workflows/argo-ci/nightly" {
+					_, _ = w.Write([]byte(`{"metadata":{"name":"nightly"}}`))
+					return
+				}
+				metadata := ""
+				if r.URL.Query().Get("listOptions.fieldSelector") == "ext.showRemainingItemCount=true" {
+					metadata = `"metadata":{"continue":"next"},`
+				}
+				_, _ = fmt.Fprintf(w, `{%s"items":[{"metadata":{"name":"first"}}]}`, metadata)
+			}))
+			defer server.Close()
+
+			page, err := test.call(New(Config{BaseURL: server.URL}))
+			if err != nil || page.Continue != "next" {
+				t.Fatalf("continuation was not preserved: page=%#v err=%v", page, err)
+			}
+		})
+	}
+}
+
+func TestListWorkflowsPushesCanonicalKnownPhaseBeforeLimit(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("listOptions.labelSelector"); got != "workflows.argoproj.io/phase=Running" {
+			t.Fatalf("unexpected phase selector: %q", got)
+		}
+		_, _ = w.Write([]byte(`{"items":[{"metadata":{"name":"active"},"status":{"phase":"Running"}}]}`))
+	}))
+	defer server.Close()
+
+	page, err := New(Config{BaseURL: server.URL}).ListWorkflows(context.Background(), "argo-ci", "rUnNiNg", 1, "")
+	if err != nil || !slices.Equal(names(page.Items), []string{"active"}) {
+		t.Fatalf("canonical phase result: page=%#v err=%v", page, err)
+	}
+}
+
+func TestListWorkflowsKeepsUnknownPhaseOutOfUpstreamSelector(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("listOptions.labelSelector"); got != "" {
+			t.Fatalf("unknown phase leaked into label selector: %q", got)
+		}
+		_, _ = w.Write([]byte(`{"items":[{"metadata":{"name":"internal"},"status":{"phase":"InternalStatus"}}]}`))
+	}))
+	defer server.Close()
+
+	page, err := New(Config{BaseURL: server.URL}).ListWorkflows(context.Background(), "argo-ci", "internalstatus", 1, "")
+	if err != nil || !slices.Equal(names(page.Items), []string{"internal"}) {
+		t.Fatalf("unknown phase local filter result: page=%#v err=%v", page, err)
+	}
+}
+
+func TestListWorkflowsComposesCanonicalPhaseWithExistingLabels(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("listOptions.labelSelector"); got != "workflows.argoproj.io/cron-workflow=nightly,workflows.argoproj.io/phase=Failed" {
+			t.Fatalf("unexpected combined label selector: %q", got)
+		}
+		_, _ = w.Write([]byte(`{"items":[{"metadata":{"name":"nightly-001"},"status":{"phase":"Failed"}}]}`))
+	}))
+	defer server.Close()
+
+	page, err := New(Config{BaseURL: server.URL}).listWorkflows(
+		context.Background(), "argo-ci", "FAILED", 1, "", "workflows.argoproj.io/cron-workflow=nightly", defaultHistoryLimit,
+	)
+	if err != nil || !slices.Equal(names(page.Items), []string{"nightly-001"}) {
+		t.Fatalf("combined selector result: page=%#v err=%v", page, err)
+	}
+}
+
 func TestListWorkflowsFilteredPagesDoNotDropMatchingTail(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

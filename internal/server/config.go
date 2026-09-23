@@ -30,6 +30,9 @@ type Config struct {
 	ArgoTLSServerName      string
 	ArgoRequestTimeout     time.Duration
 	DefaultNamespace       string
+	KubernetesAPIURL       string
+	KubernetesToken        string
+	KubernetesCAPEM        string
 
 	AllowMutations      bool
 	AllowDestructive    bool
@@ -73,6 +76,9 @@ func ConfigFromLookup(lookup func(string) (string, bool)) (Config, error) {
 		ArgoTLSServerName:      envValue(lookup, "ARGO_TLS_SERVER_NAME"),
 		ArgoRequestTimeout:     envDurationSeconds(lookup, "ARGO_REQUEST_TIMEOUT_SECONDS", 30),
 		DefaultNamespace:       envOrDefault(lookup, "ARGO_NAMESPACE", "default"),
+		KubernetesAPIURL:       envValue(lookup, "KUBERNETES_API_URL"),
+		KubernetesToken:        envValue(lookup, "KUBERNETES_TOKEN"),
+		KubernetesCAPEM:        envValue(lookup, "KUBERNETES_CA_PEM"),
 		AllowMutations:         envBool(lookup, "MCP_ALLOW_MUTATIONS", false),
 		AllowDestructive:       envBool(lookup, "MCP_ALLOW_DESTRUCTIVE", false),
 		RequireConfirmation:    envBool(lookup, "MCP_REQUIRE_CONFIRMATION", true),
@@ -81,6 +87,9 @@ func ConfigFromLookup(lookup func(string) (string, bool)) (Config, error) {
 		AuditEnabled:           envBool(lookup, "MCP_AUDIT_ENABLED", true),
 		AuditFile:              envOrDefault(lookup, "MCP_AUDIT_FILE", "./mcp-audit.log"),
 		ShutdownTimeout:        5 * time.Second,
+	}
+	if cfg.KubernetesAPIURL == "" && (cfg.KubernetesToken != "" || cfg.KubernetesCAPEM != "") {
+		return Config{}, fmt.Errorf("KUBERNETES_API_URL is required when Kubernetes credentials or CA are configured")
 	}
 	if mode != TransportStdio {
 		if value, ok := lookup("ARGO_MCP_AUTH_TOKEN"); ok {

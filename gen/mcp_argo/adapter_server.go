@@ -607,10 +607,10 @@ func (a *MCPAdapter) generatedToolCatalog() []*ToolInfo {
 		Title:        stringPtr("Get Workflow"),
 	}, &ToolInfo{
 		Annotations:  jsontext.Value([]byte("{\"destructiveHint\":false,\"readOnlyHint\":true}")),
-		Description:  stringPtr("Get the latest matching log entries from a workflow's pods"),
-		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"workflow_name\"],\"properties\":{\"container\":{\"type\":\"string\",\"description\":\"Container name; defaults to main\",\"default\":\"main\"},\"max_lines\":{\"type\":\"integer\",\"description\":\"Maximum lines to return; zero returns all lines\",\"default\":200,\"minimum\":0,\"maximum\":9223372036854775807},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"},\"pod_name\":{\"type\":\"string\",\"description\":\"Optional exact pod name; omit to collect logs across workflow pods\"},\"search\":{\"type\":\"string\",\"description\":\"Optional case-insensitive search across log text and pod names\"},\"workflow_name\":{\"type\":\"string\",\"description\":\"Exact workflow name; use list_workflows to discover names\"}},\"additionalProperties\":false}")),
+		Description:  stringPtr("Get bounded matching live or retained log entries for a workflow"),
+		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"workflow_name\"],\"properties\":{\"archive_uid\":{\"type\":\"string\",\"description\":\"Archive UID\"},\"container\":{\"type\":\"string\",\"description\":\"Container name; defaults to main\",\"default\":\"main\"},\"max_bytes\":{\"type\":\"integer\",\"description\":\"Maximum collected bytes; defaults to 1 MiB\",\"default\":1048576,\"minimum\":1024,\"maximum\":4194304},\"max_lines\":{\"type\":\"integer\",\"description\":\"Maximum lines to return; zero returns all lines\",\"default\":200,\"minimum\":0,\"maximum\":9223372036854775807},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"},\"node_id\":{\"type\":\"string\",\"description\":\"Exact archived node ID\"},\"pod_name\":{\"type\":\"string\",\"description\":\"Optional exact pod name; omit to collect logs across workflow pods\"},\"search\":{\"type\":\"string\",\"description\":\"Optional case-insensitive search across log text and pod names\"},\"source\":{\"type\":\"string\",\"description\":\"Log source\",\"enum\":[\"auto\",\"live\",\"archive\"],\"default\":\"auto\"},\"workflow_name\":{\"type\":\"string\",\"description\":\"Exact workflow name; use list_workflows to discover names\"}},\"additionalProperties\":false}")),
 		Name:         "get_workflow_logs",
-		OutputSchema: jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"namespace\",\"workflow\",\"container\",\"total_lines\",\"matching_lines\",\"returned_lines\",\"logs\"],\"properties\":{\"container\":{\"type\":\"string\",\"description\":\"Container name\"},\"logs\":{\"type\":\"string\",\"description\":\"Rendered log entries; empty when no entries match\"},\"matching_lines\":{\"type\":\"integer\",\"description\":\"Entries matching the search term\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"max_lines\":{\"type\":\"integer\",\"description\":\"Maximum matching entries returned; omitted when unlimited\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace\"},\"note\":{\"type\":\"string\",\"description\":\"Explanation of empty or truncated results\"},\"pod\":{\"type\":\"string\",\"description\":\"Pod filter, when provided\"},\"returned_lines\":{\"type\":\"integer\",\"description\":\"Entries included in logs\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"search_term\":{\"type\":\"string\",\"description\":\"Case-insensitive local search term\"},\"total_lines\":{\"type\":\"integer\",\"description\":\"Log entries returned by Argo before local filtering\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"workflow\":{\"type\":\"string\",\"description\":\"Workflow name\"}},\"additionalProperties\":false}")),
+		OutputSchema: jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"namespace\",\"workflow\",\"container\",\"total_lines\",\"matching_lines\",\"returned_lines\",\"logs\",\"source\",\"truncated\"],\"properties\":{\"container\":{\"type\":\"string\",\"description\":\"Container name\"},\"logs\":{\"type\":\"string\",\"description\":\"Rendered log entries; empty when no entries match\"},\"matching_lines\":{\"type\":\"integer\",\"description\":\"Entries matching the search term\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"max_lines\":{\"type\":\"integer\",\"description\":\"Maximum matching entries returned; omitted when unlimited\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace\"},\"note\":{\"type\":\"string\",\"description\":\"Explanation of empty or truncated results\"},\"pod\":{\"type\":\"string\",\"description\":\"Pod filter, when provided\"},\"returned_lines\":{\"type\":\"integer\",\"description\":\"Entries included in logs\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"search_term\":{\"type\":\"string\",\"description\":\"Case-insensitive local search term\"},\"source\":{\"type\":\"string\",\"description\":\"Log source: live or archive\"},\"total_lines\":{\"type\":\"integer\",\"description\":\"Log entries returned by Argo before local filtering\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"truncated\":{\"type\":\"boolean\",\"description\":\"Whether collection was bounded before all available content\"},\"workflow\":{\"type\":\"string\",\"description\":\"Workflow name\"}},\"additionalProperties\":false}")),
 		Title:        stringPtr("Get Workflow Logs"),
 	}, &ToolInfo{
 		Annotations:  jsontext.Value([]byte("{\"destructiveHint\":true,\"readOnlyHint\":false}")),
@@ -685,9 +685,9 @@ func (a *MCPAdapter) generatedToolCatalog() []*ToolInfo {
 	}, &ToolInfo{
 		Annotations:  jsontext.Value([]byte("{\"destructiveHint\":false,\"readOnlyHint\":true}")),
 		Description:  stringPtr("Get a filtered, bounded page of workflow nodes"),
-		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"limit\":{\"type\":\"integer\",\"description\":\"Maximum nodes; defaults to 50\",\"default\":50,\"minimum\":1,\"maximum\":200},\"name\":{\"type\":\"string\",\"description\":\"Exact workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to ARGO_NAMESPACE\"},\"node_id\":{\"type\":\"string\",\"description\":\"Optional exact node ID\"},\"offset\":{\"type\":\"integer\",\"description\":\"Zero-based offset\",\"default\":0,\"minimum\":0,\"maximum\":9223372036854775807},\"phase\":{\"type\":\"string\",\"description\":\"Optional exact node phase\"}},\"additionalProperties\":false}")),
+		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"archive_uid\":{\"type\":\"string\",\"description\":\"Archive UID; omit for live workflow data\"},\"limit\":{\"type\":\"integer\",\"description\":\"Maximum nodes; defaults to 50\",\"default\":50,\"minimum\":1,\"maximum\":200},\"name\":{\"type\":\"string\",\"description\":\"Exact workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to ARGO_NAMESPACE\"},\"node_id\":{\"type\":\"string\",\"description\":\"Optional exact node ID\"},\"offset\":{\"type\":\"integer\",\"description\":\"Zero-based offset\",\"default\":0,\"minimum\":0,\"maximum\":9223372036854775807},\"phase\":{\"type\":\"string\",\"description\":\"Optional exact node phase\"}},\"additionalProperties\":false}")),
 		Name:         "get_workflow_nodes",
-		OutputSchema: jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"nodes\",\"total\",\"count\",\"truncated\",\"fields_truncated\"],\"properties\":{\"count\":{\"type\":\"integer\",\"description\":\"Nodes returned\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"fields_truncated\":{\"type\":\"boolean\",\"description\":\"Whether any displayed field or child list was shortened\"},\"next_offset\":{\"type\":\"integer\",\"description\":\"Offset for the next page; absent when exhausted\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"nodes\":{\"type\":\"array\",\"description\":\"Filtered nodes sorted by stable ID\",\"items\":{\"type\":\"object\",\"required\":[\"id\",\"name\",\"type\",\"children\"],\"properties\":{\"boundary_id\":{\"type\":\"string\",\"description\":\"Template boundary node ID\"},\"children\":{\"type\":\"array\",\"description\":\"Child node IDs; links may point outside the current page\",\"items\":{\"type\":\"string\"}},\"display_name\":{\"type\":\"string\",\"description\":\"Human-readable node name\"},\"finished_at\":{\"type\":\"string\",\"description\":\"RFC3339 finish timestamp\"},\"id\":{\"type\":\"string\",\"description\":\"Stable node ID\"},\"message\":{\"type\":\"string\",\"description\":\"Diagnostic message, truncated to 4 KiB\"},\"name\":{\"type\":\"string\",\"description\":\"Node name\"},\"phase\":{\"type\":\"string\",\"description\":\"Node phase\"},\"started_at\":{\"type\":\"string\",\"description\":\"RFC3339 start timestamp\"},\"template_name\":{\"type\":\"string\",\"description\":\"Template name\"},\"type\":{\"type\":\"string\",\"description\":\"Node type\"}},\"additionalProperties\":false}},\"note\":{\"type\":\"string\",\"description\":\"Truncation or paging note\"},\"total\":{\"type\":\"integer\",\"description\":\"Total filtered nodes before paging\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"truncated\":{\"type\":\"boolean\",\"description\":\"Whether another page exists or fields were shortened\"}},\"additionalProperties\":false}")),
+		OutputSchema: jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"nodes\",\"total\",\"count\",\"truncated\",\"fields_truncated\"],\"properties\":{\"count\":{\"type\":\"integer\",\"description\":\"Nodes returned\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"fields_truncated\":{\"type\":\"boolean\",\"description\":\"Whether any displayed field or child list was shortened\"},\"next_offset\":{\"type\":\"integer\",\"description\":\"Offset for the next page; absent when exhausted\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"nodes\":{\"type\":\"array\",\"description\":\"Filtered nodes sorted by stable ID\",\"items\":{\"type\":\"object\",\"required\":[\"id\",\"name\",\"type\",\"children\"],\"properties\":{\"boundary_id\":{\"type\":\"string\",\"description\":\"Template boundary node ID\"},\"children\":{\"type\":\"array\",\"description\":\"Child node IDs; links may point outside the current page\",\"items\":{\"type\":\"string\"}},\"display_name\":{\"type\":\"string\",\"description\":\"Human-readable node name\"},\"exit_code\":{\"type\":\"string\",\"description\":\"Node exit code\"},\"finished_at\":{\"type\":\"string\",\"description\":\"RFC3339 finish timestamp\"},\"id\":{\"type\":\"string\",\"description\":\"Stable node ID\"},\"input_parameters\":{\"type\":\"object\",\"description\":\"Node input parameters\",\"additionalProperties\":{\"type\":\"string\"}},\"message\":{\"type\":\"string\",\"description\":\"Diagnostic message, truncated to 4 KiB\"},\"name\":{\"type\":\"string\",\"description\":\"Node name\"},\"output_parameters\":{\"type\":\"object\",\"description\":\"Node output parameters\",\"additionalProperties\":{\"type\":\"string\"}},\"output_result\":{\"type\":\"string\",\"description\":\"Node output result, truncated to 16 KiB\"},\"phase\":{\"type\":\"string\",\"description\":\"Node phase\"},\"started_at\":{\"type\":\"string\",\"description\":\"RFC3339 start timestamp\"},\"template_name\":{\"type\":\"string\",\"description\":\"Template name\"},\"type\":{\"type\":\"string\",\"description\":\"Node type\"}},\"additionalProperties\":false}},\"note\":{\"type\":\"string\",\"description\":\"Truncation or paging note\"},\"total\":{\"type\":\"integer\",\"description\":\"Total filtered nodes before paging\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"truncated\":{\"type\":\"boolean\",\"description\":\"Whether another page exists or fields were shortened\"}},\"additionalProperties\":false}")),
 		Title:        stringPtr("Get Workflow Nodes"),
 	}, &ToolInfo{
 		Annotations:  jsontext.Value([]byte("{\"destructiveHint\":false,\"readOnlyHint\":true}")),
@@ -713,10 +713,45 @@ func (a *MCPAdapter) generatedToolCatalog() []*ToolInfo {
 	}, &ToolInfo{
 		Annotations:  jsontext.Value([]byte("{\"destructiveHint\":false,\"readOnlyHint\":true}")),
 		Description:  stringPtr("Get artifact metadata and trusted Argo download links"),
-		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"limit\":{\"type\":\"integer\",\"description\":\"Maximum artifacts; defaults to 50\",\"default\":50,\"minimum\":1,\"maximum\":200},\"name\":{\"type\":\"string\",\"description\":\"Exact workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to ARGO_NAMESPACE\"},\"node_id\":{\"type\":\"string\",\"description\":\"Optional exact node ID\"},\"offset\":{\"type\":\"integer\",\"description\":\"Zero-based offset\",\"default\":0,\"minimum\":0,\"maximum\":9223372036854775807}},\"additionalProperties\":false}")),
+		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"archive_uid\":{\"type\":\"string\",\"description\":\"Archive UID; omit for live workflow data\"},\"limit\":{\"type\":\"integer\",\"description\":\"Maximum artifacts; defaults to 50\",\"default\":50,\"minimum\":1,\"maximum\":200},\"name\":{\"type\":\"string\",\"description\":\"Exact workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to ARGO_NAMESPACE\"},\"node_id\":{\"type\":\"string\",\"description\":\"Optional exact node ID\"},\"offset\":{\"type\":\"integer\",\"description\":\"Zero-based offset\",\"default\":0,\"minimum\":0,\"maximum\":9223372036854775807}},\"additionalProperties\":false}")),
 		Name:         "get_workflow_artifacts",
 		OutputSchema: jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"artifacts\",\"total\",\"count\",\"truncated\",\"fields_truncated\"],\"properties\":{\"artifacts\":{\"type\":\"array\",\"description\":\"Artifact metadata sorted by node, direction, and name\",\"items\":{\"type\":\"object\",\"required\":[\"name\",\"node_id\",\"direction\",\"optional\"],\"properties\":{\"direction\":{\"type\":\"string\",\"description\":\"inputs or outputs\",\"enum\":[\"inputs\",\"outputs\"]},\"download_url\":{\"type\":\"string\",\"description\":\"Safe Argo artifact download URL\"},\"name\":{\"type\":\"string\",\"description\":\"Artifact name\"},\"node_id\":{\"type\":\"string\",\"description\":\"Owning node ID\"},\"optional\":{\"type\":\"boolean\",\"description\":\"Whether the artifact is optional\"},\"path\":{\"type\":\"string\",\"description\":\"Container artifact path\"}},\"additionalProperties\":false}},\"count\":{\"type\":\"integer\",\"description\":\"Artifacts returned\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"fields_truncated\":{\"type\":\"boolean\",\"description\":\"Whether displayed fields were shortened or a link was omitted\"},\"next_offset\":{\"type\":\"integer\",\"description\":\"Offset for the next page; absent when exhausted\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"note\":{\"type\":\"string\",\"description\":\"Truncation or paging note\"},\"total\":{\"type\":\"integer\",\"description\":\"Total filtered artifacts before paging\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"truncated\":{\"type\":\"boolean\",\"description\":\"Whether another page exists or fields/links were shortened\"}},\"additionalProperties\":false}")),
 		Title:        stringPtr("Get Workflow Artifacts"),
+	}, &ToolInfo{
+		Annotations:  jsontext.Value([]byte("{\"destructiveHint\":false,\"readOnlyHint\":true}")),
+		Description:  stringPtr("Read bounded UTF-8 text from a declared workflow artifact"),
+		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"name\",\"node_id\",\"artifact_name\"],\"properties\":{\"archive_uid\":{\"type\":\"string\",\"description\":\"Archive UID; omit for live workflow data\"},\"artifact_name\":{\"type\":\"string\",\"description\":\"Exact declared artifact name\"},\"direction\":{\"type\":\"string\",\"description\":\"Artifact direction\",\"enum\":[\"inputs\",\"outputs\"],\"default\":\"outputs\"},\"max_bytes\":{\"type\":\"integer\",\"description\":\"Maximum bytes to return\",\"default\":65536,\"minimum\":4,\"maximum\":262144},\"name\":{\"type\":\"string\",\"description\":\"Exact workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to ARGO_NAMESPACE\"},\"node_id\":{\"type\":\"string\",\"description\":\"Exact workflow node ID\"},\"offset_bytes\":{\"type\":\"integer\",\"description\":\"Byte offset\",\"default\":0,\"minimum\":0,\"maximum\":16777216}},\"additionalProperties\":false}")),
+		Name:         "read_workflow_artifact",
+		OutputSchema: jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"namespace\",\"name\",\"node_id\",\"artifact_name\",\"direction\",\"text\",\"offset_bytes\",\"returned_bytes\",\"has_more\",\"source\"],\"properties\":{\"archive_uid\":{\"type\":\"string\",\"description\":\"Archive UID when reading retained workflow data\"},\"artifact_name\":{\"type\":\"string\",\"description\":\"Artifact name\"},\"direction\":{\"type\":\"string\",\"description\":\"Artifact direction\",\"enum\":[\"inputs\",\"outputs\"]},\"has_more\":{\"type\":\"boolean\",\"description\":\"Whether more artifact bytes remain\"},\"name\":{\"type\":\"string\",\"description\":\"Workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace\"},\"next_offset\":{\"type\":\"integer\",\"description\":\"Next byte offset; present only when more bytes remain\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"node_id\":{\"type\":\"string\",\"description\":\"Owning node ID\"},\"note\":{\"type\":\"string\",\"description\":\"Pagination or retention guidance\"},\"offset_bytes\":{\"type\":\"integer\",\"description\":\"Requested byte offset\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"returned_bytes\":{\"type\":\"integer\",\"description\":\"Original artifact bytes returned\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"source\":{\"type\":\"string\",\"description\":\"Data source; always argo\"},\"text\":{\"type\":\"string\",\"description\":\"UTF-8 artifact text\"}},\"additionalProperties\":false}")),
+		Title:        stringPtr("Read Workflow Artifact"),
+	}, &ToolInfo{
+		Annotations:  jsontext.Value([]byte("{\"destructiveHint\":false,\"readOnlyHint\":true}")),
+		Description:  stringPtr("Get a preserved bounded section of an Argo resource specification"),
+		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"kind\",\"name\"],\"properties\":{\"kind\":{\"type\":\"string\",\"description\":\"Resource kind\",\"enum\":[\"workflow\",\"workflow_template\",\"cluster_workflow_template\",\"cron_workflow\"]},\"max_bytes\":{\"type\":\"integer\",\"description\":\"Maximum serialized JSON bytes\",\"default\":65536,\"minimum\":1024,\"maximum\":262144},\"name\":{\"type\":\"string\",\"description\":\"Exact resource name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; forbidden for cluster scope\"},\"section\":{\"type\":\"string\",\"description\":\"Spec section\",\"enum\":[\"summary\",\"arguments\",\"templates\",\"spec\"],\"default\":\"summary\"},\"template_name\":{\"type\":\"string\",\"description\":\"Exact template name; valid only for templates\"}},\"additionalProperties\":false}")),
+		Name:         "get_resource_spec",
+		OutputSchema: jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"kind\",\"name\",\"section\",\"spec_json\",\"source\"],\"properties\":{\"kind\":{\"type\":\"string\",\"description\":\"Resource kind\"},\"name\":{\"type\":\"string\",\"description\":\"Resource name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; absent for cluster-scoped resources\"},\"section\":{\"type\":\"string\",\"description\":\"Selected spec section\"},\"source\":{\"type\":\"string\",\"description\":\"Data source; always argo\"},\"spec_json\":{\"type\":\"string\",\"description\":\"Canonical JSON for the selected upstream fields\"},\"template_name\":{\"type\":\"string\",\"description\":\"Selected template name\"}},\"additionalProperties\":false}")),
+		Title:        stringPtr("Get Resource Spec"),
+	}, &ToolInfo{
+		Annotations:  jsontext.Value([]byte("{\"destructiveHint\":false,\"readOnlyHint\":true}")),
+		Description:  stringPtr("Get workflow-owned pod failures, container states, and events"),
+		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"continue\":{\"type\":\"string\",\"description\":\"Opaque Kubernetes continuation token\"},\"limit\":{\"type\":\"integer\",\"description\":\"Maximum pods\",\"default\":20,\"minimum\":1,\"maximum\":50},\"name\":{\"type\":\"string\",\"description\":\"Exact workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to ARGO_NAMESPACE\"},\"pod_name\":{\"type\":\"string\",\"description\":\"Optional exact pod name\"}},\"additionalProperties\":false}")),
+		Name:         "get_workflow_pod_diagnostics",
+		OutputSchema: jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"namespace\",\"name\",\"pods\",\"count\",\"has_more\",\"truncated\",\"source\"],\"properties\":{\"continue\":{\"type\":\"string\",\"description\":\"Opaque continuation token\"},\"count\":{\"type\":\"integer\",\"description\":\"Pods returned\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"has_more\":{\"type\":\"boolean\",\"description\":\"Whether another Kubernetes page exists\"},\"name\":{\"type\":\"string\",\"description\":\"Workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace\"},\"pods\":{\"type\":\"array\",\"description\":\"Workflow-owned pods\",\"items\":{\"type\":\"object\",\"required\":[\"name\",\"uid\",\"phase\",\"node_name\",\"conditions\",\"init_containers\",\"containers\",\"events\",\"events_truncated\",\"truncated\"],\"properties\":{\"conditions\":{\"type\":\"array\",\"description\":\"Bounded pod conditions\",\"items\":{\"type\":\"object\",\"required\":[\"type\",\"status\",\"reason\",\"message\"],\"properties\":{\"message\":{\"type\":\"string\",\"description\":\"Condition message\"},\"reason\":{\"type\":\"string\",\"description\":\"Condition reason\"},\"status\":{\"type\":\"string\",\"description\":\"Condition status\"},\"type\":{\"type\":\"string\",\"description\":\"Condition type\"}},\"additionalProperties\":false}},\"containers\":{\"type\":\"array\",\"description\":\"Bounded container states\",\"items\":{\"type\":\"object\",\"required\":[\"name\",\"restart_count\",\"ready\",\"state\",\"last_state\"],\"properties\":{\"last_state\":{\"type\":\"object\",\"description\":\"Previous container state\",\"required\":[\"status\",\"reason\",\"message\"],\"properties\":{\"exit_code\":{\"type\":\"integer\",\"description\":\"Termination exit code\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"finished_at\":{\"type\":\"string\",\"description\":\"RFC3339 finish timestamp\"},\"message\":{\"type\":\"string\",\"description\":\"State message\"},\"reason\":{\"type\":\"string\",\"description\":\"State reason\"},\"started_at\":{\"type\":\"string\",\"description\":\"RFC3339 start timestamp\"},\"status\":{\"type\":\"string\",\"description\":\"waiting, running, terminated, or unknown\"}},\"additionalProperties\":false},\"name\":{\"type\":\"string\",\"description\":\"Container name\"},\"ready\":{\"type\":\"boolean\",\"description\":\"Whether the container is ready\"},\"restart_count\":{\"type\":\"integer\",\"description\":\"Container restart count\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"state\":{\"type\":\"object\",\"description\":\"Current container state\",\"required\":[\"status\",\"reason\",\"message\"],\"properties\":{\"exit_code\":{\"type\":\"integer\",\"description\":\"Termination exit code\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"finished_at\":{\"type\":\"string\",\"description\":\"RFC3339 finish timestamp\"},\"message\":{\"type\":\"string\",\"description\":\"State message\"},\"reason\":{\"type\":\"string\",\"description\":\"State reason\"},\"started_at\":{\"type\":\"string\",\"description\":\"RFC3339 start timestamp\"},\"status\":{\"type\":\"string\",\"description\":\"waiting, running, terminated, or unknown\"}},\"additionalProperties\":false}},\"additionalProperties\":false}},\"events\":{\"type\":\"array\",\"description\":\"UID-scoped Kubernetes events\",\"items\":{\"type\":\"object\",\"required\":[\"type\",\"reason\",\"message\",\"count\",\"first_timestamp\",\"last_timestamp\"],\"properties\":{\"count\":{\"type\":\"integer\",\"description\":\"Occurrence count\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"first_timestamp\":{\"type\":\"string\",\"description\":\"First observation timestamp\"},\"last_timestamp\":{\"type\":\"string\",\"description\":\"Last observation timestamp\"},\"message\":{\"type\":\"string\",\"description\":\"Event message\"},\"reason\":{\"type\":\"string\",\"description\":\"Event reason\"},\"type\":{\"type\":\"string\",\"description\":\"Event type\"}},\"additionalProperties\":false}},\"events_error\":{\"type\":\"string\",\"description\":\"Safe per-pod event retrieval error\"},\"events_truncated\":{\"type\":\"boolean\",\"description\":\"Whether more events exist\"},\"init_containers\":{\"type\":\"array\",\"description\":\"Bounded init-container states\",\"items\":{\"type\":\"object\",\"required\":[\"name\",\"restart_count\",\"ready\",\"state\",\"last_state\"],\"properties\":{\"last_state\":{\"type\":\"object\",\"description\":\"Previous container state\",\"required\":[\"status\",\"reason\",\"message\"],\"properties\":{\"exit_code\":{\"type\":\"integer\",\"description\":\"Termination exit code\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"finished_at\":{\"type\":\"string\",\"description\":\"RFC3339 finish timestamp\"},\"message\":{\"type\":\"string\",\"description\":\"State message\"},\"reason\":{\"type\":\"string\",\"description\":\"State reason\"},\"started_at\":{\"type\":\"string\",\"description\":\"RFC3339 start timestamp\"},\"status\":{\"type\":\"string\",\"description\":\"waiting, running, terminated, or unknown\"}},\"additionalProperties\":false},\"name\":{\"type\":\"string\",\"description\":\"Container name\"},\"ready\":{\"type\":\"boolean\",\"description\":\"Whether the container is ready\"},\"restart_count\":{\"type\":\"integer\",\"description\":\"Container restart count\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"state\":{\"type\":\"object\",\"description\":\"Current container state\",\"required\":[\"status\",\"reason\",\"message\"],\"properties\":{\"exit_code\":{\"type\":\"integer\",\"description\":\"Termination exit code\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"finished_at\":{\"type\":\"string\",\"description\":\"RFC3339 finish timestamp\"},\"message\":{\"type\":\"string\",\"description\":\"State message\"},\"reason\":{\"type\":\"string\",\"description\":\"State reason\"},\"started_at\":{\"type\":\"string\",\"description\":\"RFC3339 start timestamp\"},\"status\":{\"type\":\"string\",\"description\":\"waiting, running, terminated, or unknown\"}},\"additionalProperties\":false}},\"additionalProperties\":false}},\"name\":{\"type\":\"string\",\"description\":\"Pod name\"},\"node_name\":{\"type\":\"string\",\"description\":\"Assigned Kubernetes node\"},\"phase\":{\"type\":\"string\",\"description\":\"Pod phase\"},\"truncated\":{\"type\":\"boolean\",\"description\":\"Whether any pod field was shortened\"},\"uid\":{\"type\":\"string\",\"description\":\"Pod UID\"}},\"additionalProperties\":false}},\"source\":{\"type\":\"string\",\"description\":\"Data source; always kubernetes\"},\"truncated\":{\"type\":\"boolean\",\"description\":\"Whether output fields were shortened\"}},\"additionalProperties\":false}")),
+		Title:        stringPtr("Get Workflow Pod Diagnostics"),
+	}, &ToolInfo{
+		Annotations:  jsontext.Value([]byte("{\"destructiveHint\":false,\"readOnlyHint\":true}")),
+		Description:  stringPtr("Wait briefly for a workflow to reach a terminal phase"),
+		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"duration_seconds\":{\"type\":\"integer\",\"description\":\"Maximum wait duration\",\"default\":10,\"minimum\":1,\"maximum\":30},\"name\":{\"type\":\"string\",\"description\":\"Exact workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to ARGO_NAMESPACE\"},\"poll_interval_seconds\":{\"type\":\"integer\",\"description\":\"Polling interval\",\"default\":2,\"minimum\":1,\"maximum\":5}},\"additionalProperties\":false}")),
+		Name:         "wait_workflow",
+		OutputSchema: jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"workflow\",\"completed\",\"timed_out\",\"source\"],\"properties\":{\"completed\":{\"type\":\"boolean\",\"description\":\"Whether the workflow reached a terminal phase\"},\"source\":{\"type\":\"string\",\"description\":\"Data source; always argo\"},\"timed_out\":{\"type\":\"boolean\",\"description\":\"Whether the owned wait deadline expired\"},\"workflow\":{\"type\":\"object\",\"description\":\"Latest workflow detail\",\"required\":[\"name\",\"namespace\",\"status\"],\"properties\":{\"annotations\":{\"type\":\"object\",\"description\":\"Workflow annotations\",\"additionalProperties\":{\"type\":\"string\"}},\"duration\":{\"type\":\"string\",\"description\":\"Elapsed workflow duration\"},\"finished_at\":{\"type\":\"string\",\"description\":\"RFC3339 finish timestamp\"},\"labels\":{\"type\":\"object\",\"description\":\"Workflow labels\",\"additionalProperties\":{\"type\":\"string\"}},\"message\":{\"type\":\"string\",\"description\":\"Status message reported by Argo\"},\"name\":{\"type\":\"string\",\"description\":\"Workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace\"},\"outputs\":{\"type\":\"object\",\"description\":\"Workflow output parameters\",\"additionalProperties\":{\"type\":\"string\"}},\"parameters\":{\"type\":\"object\",\"description\":\"Workflow input parameters\",\"additionalProperties\":{\"type\":\"string\"}},\"progress\":{\"type\":\"string\",\"description\":\"Completed nodes over total nodes\"},\"started_at\":{\"type\":\"string\",\"description\":\"RFC3339 start timestamp\"},\"status\":{\"type\":\"string\",\"description\":\"Current workflow phase\"}},\"additionalProperties\":false}},\"additionalProperties\":false}")),
+		Title:        stringPtr("Wait Workflow"),
+	}, &ToolInfo{
+		Annotations:  jsontext.Value([]byte("{\"destructiveHint\":false,\"readOnlyHint\":true}")),
+		Description:  stringPtr("Get sanitized server and backend context"),
+		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"properties\":{},\"additionalProperties\":false}")),
+		Name:         "get_server_context",
+		OutputSchema: jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"build_version\",\"mcp_version\",\"transport\",\"default_namespace\",\"allowed_namespaces\",\"denied_namespaces\",\"allow_mutations\",\"allow_destructive\",\"require_confirmation\",\"argo_configured\",\"kubernetes_configured\",\"argo_status\",\"note\"],\"properties\":{\"allow_destructive\":{\"type\":\"boolean\",\"description\":\"Whether destructive mutations are enabled\"},\"allow_mutations\":{\"type\":\"boolean\",\"description\":\"Whether mutations are enabled\"},\"allowed_namespaces\":{\"type\":\"array\",\"description\":\"Configured namespace allow list\",\"items\":{\"type\":\"string\"}},\"argo_configured\":{\"type\":\"boolean\",\"description\":\"Whether Argo is configured\"},\"argo_status\":{\"type\":\"string\",\"description\":\"Argo context status\",\"enum\":[\"unconfigured\",\"available\",\"unavailable\"]},\"argo_version\":{\"type\":\"string\",\"description\":\"Upstream Argo version\"},\"build_version\":{\"type\":\"string\",\"description\":\"CLI build version\"},\"default_namespace\":{\"type\":\"string\",\"description\":\"Configured default namespace\"},\"denied_namespaces\":{\"type\":\"array\",\"description\":\"Configured namespace deny list\",\"items\":{\"type\":\"string\"}},\"kubernetes_configured\":{\"type\":\"boolean\",\"description\":\"Whether Kubernetes diagnostics are configured\"},\"mcp_version\":{\"type\":\"string\",\"description\":\"Declared MCP protocol version\"},\"note\":{\"type\":\"string\",\"description\":\"Namespace policy and upstream-status context\"},\"require_confirmation\":{\"type\":\"boolean\",\"description\":\"Whether destructive confirmation is required\"},\"transport\":{\"type\":\"string\",\"description\":\"Active MCP transport\"}},\"additionalProperties\":false}")),
+		Title:        stringPtr("Get Server Context"),
 	}, &ToolInfo{
 		Annotations:  jsontext.Value([]byte("{\"destructiveHint\":false,\"readOnlyHint\":true}")),
 		Description:  stringPtr("Validate a Workflow manifest with Argo"),
@@ -829,6 +864,16 @@ func isGeneratedToolName(name string) bool {
 	case "get_archived_workflow":
 		return true
 	case "get_workflow_artifacts":
+		return true
+	case "read_workflow_artifact":
+		return true
+	case "get_resource_spec":
+		return true
+	case "get_workflow_pod_diagnostics":
+		return true
+	case "wait_workflow":
+		return true
+	case "get_server_context":
 		return true
 	case "lint_workflow":
 		return true
@@ -1598,7 +1643,7 @@ func getWorkflowLogsInputRecovery(err error, raw jsontext.Value) string {
 		message = strings.TrimSpace(err.Error())
 	}
 	_ = raw
-	example := "{\"container\":\"main\",\"max_lines\":200,\"workflow_name\":\"example\"}"
+	example := "{\"container\":\"main\",\"max_bytes\":1048576,\"max_lines\":200,\"source\":\"auto\",\"workflow_name\":\"example\"}"
 	if field := missingFieldFromMessage(message); field != "" {
 		return fmt.Sprintf("Include required field %q. Example: %s", field, example)
 	}
@@ -1824,6 +1869,66 @@ func getWorkflowArtifactsInputRecovery(err error, raw jsontext.Value) string {
 	}
 	_ = raw
 	example := "{\"limit\":50,\"name\":\"example\",\"offset\":0}"
+	if field := missingFieldFromMessage(message); field != "" {
+		return fmt.Sprintf("Include required field %q. Example: %s", field, example)
+	}
+	if strings.Contains(message, "unexpected end of JSON input") || strings.Contains(message, "unexpected EOF") {
+		return "Provide complete JSON arguments. Example: " + example
+	}
+	return "Provide valid tool arguments. Example: " + example
+}
+func readWorkflowArtifactInputRecovery(err error, raw jsontext.Value) string {
+	message := strings.TrimSpace(loom.ErrorSafeMessage(err))
+	if message == "" {
+		message = strings.TrimSpace(err.Error())
+	}
+	_ = raw
+	example := "{\"artifact_name\":\"example\",\"direction\":\"outputs\",\"max_bytes\":65536,\"name\":\"example\",\"node_id\":\"example\",\"offset_bytes\":0}"
+	if field := missingFieldFromMessage(message); field != "" {
+		return fmt.Sprintf("Include required field %q. Example: %s", field, example)
+	}
+	if strings.Contains(message, "unexpected end of JSON input") || strings.Contains(message, "unexpected EOF") {
+		return "Provide complete JSON arguments. Example: " + example
+	}
+	return "Provide valid tool arguments. Example: " + example
+}
+func getResourceSpecInputRecovery(err error, raw jsontext.Value) string {
+	message := strings.TrimSpace(loom.ErrorSafeMessage(err))
+	if message == "" {
+		message = strings.TrimSpace(err.Error())
+	}
+	_ = raw
+	example := "{\"kind\":\"workflow\",\"max_bytes\":65536,\"name\":\"example\",\"section\":\"summary\"}"
+	if field := missingFieldFromMessage(message); field != "" {
+		return fmt.Sprintf("Include required field %q. Example: %s", field, example)
+	}
+	if strings.Contains(message, "unexpected end of JSON input") || strings.Contains(message, "unexpected EOF") {
+		return "Provide complete JSON arguments. Example: " + example
+	}
+	return "Provide valid tool arguments. Example: " + example
+}
+func getWorkflowPodDiagnosticsInputRecovery(err error, raw jsontext.Value) string {
+	message := strings.TrimSpace(loom.ErrorSafeMessage(err))
+	if message == "" {
+		message = strings.TrimSpace(err.Error())
+	}
+	_ = raw
+	example := "{\"limit\":20,\"name\":\"example\"}"
+	if field := missingFieldFromMessage(message); field != "" {
+		return fmt.Sprintf("Include required field %q. Example: %s", field, example)
+	}
+	if strings.Contains(message, "unexpected end of JSON input") || strings.Contains(message, "unexpected EOF") {
+		return "Provide complete JSON arguments. Example: " + example
+	}
+	return "Provide valid tool arguments. Example: " + example
+}
+func waitWorkflowInputRecovery(err error, raw jsontext.Value) string {
+	message := strings.TrimSpace(loom.ErrorSafeMessage(err))
+	if message == "" {
+		message = strings.TrimSpace(err.Error())
+	}
+	_ = raw
+	example := "{\"duration_seconds\":10,\"name\":\"example\",\"poll_interval_seconds\":2}"
 	if field := missingFieldFromMessage(message); field != "" {
 		return fmt.Sprintf("Include required field %q. Example: %s", field, example)
 	}
@@ -2106,13 +2211,24 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 			if _, ok := rawFields["max_lines"]; !ok {
 				payload.MaxLines = 200
 			}
+			if _, ok := rawFields["source"]; !ok {
+				payload.Source = "auto"
+			}
+			if _, ok := rawFields["max_bytes"]; !ok {
+				payload.MaxBytes = 1048576
+			}
 		}
 		{
 			if err := validateMCPPayloadRequired(rawFields, "workflow_name", false); err != nil {
 				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowLogsInputRecovery(err, arguments)))
 			}
 		}
-		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"workflow_name\"],\"properties\":{\"container\":{\"type\":\"string\",\"description\":\"Container name; defaults to main\",\"default\":\"main\"},\"max_lines\":{\"type\":\"integer\",\"description\":\"Maximum lines to return; zero returns all lines\",\"default\":200,\"minimum\":0,\"maximum\":9223372036854775807},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"},\"pod_name\":{\"type\":\"string\",\"description\":\"Optional exact pod name; omit to collect logs across workflow pods\"},\"search\":{\"type\":\"string\",\"description\":\"Optional case-insensitive search across log text and pod names\"},\"workflow_name\":{\"type\":\"string\",\"description\":\"Exact workflow name; use list_workflows to discover names\"}},\"additionalProperties\":false}"); err != nil {
+		{
+			if err := validateMCPPayloadEnum(rawFields, "source", false, "auto", "live", "archive"); err != nil {
+				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowLogsInputRecovery(err, arguments)))
+			}
+		}
+		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"workflow_name\"],\"properties\":{\"archive_uid\":{\"type\":\"string\",\"description\":\"Archive UID\"},\"container\":{\"type\":\"string\",\"description\":\"Container name; defaults to main\",\"default\":\"main\"},\"max_bytes\":{\"type\":\"integer\",\"description\":\"Maximum collected bytes; defaults to 1 MiB\",\"default\":1048576,\"minimum\":1024,\"maximum\":4194304},\"max_lines\":{\"type\":\"integer\",\"description\":\"Maximum lines to return; zero returns all lines\",\"default\":200,\"minimum\":0,\"maximum\":9223372036854775807},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"},\"node_id\":{\"type\":\"string\",\"description\":\"Exact archived node ID\"},\"pod_name\":{\"type\":\"string\",\"description\":\"Optional exact pod name; omit to collect logs across workflow pods\"},\"search\":{\"type\":\"string\",\"description\":\"Optional case-insensitive search across log text and pod names\"},\"source\":{\"type\":\"string\",\"description\":\"Log source\",\"enum\":[\"auto\",\"live\",\"archive\"],\"default\":\"auto\"},\"workflow_name\":{\"type\":\"string\",\"description\":\"Exact workflow name; use list_workflows to discover names\"}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowLogsInputRecovery(err, arguments)))
 		}
 		result, err := a.service.GetWorkflowLogs(ctx, payload)
@@ -2516,7 +2632,7 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowNodesInputRecovery(err, arguments)))
 			}
 		}
-		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"limit\":{\"type\":\"integer\",\"description\":\"Maximum nodes; defaults to 50\",\"default\":50,\"minimum\":1,\"maximum\":200},\"name\":{\"type\":\"string\",\"description\":\"Exact workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to ARGO_NAMESPACE\"},\"node_id\":{\"type\":\"string\",\"description\":\"Optional exact node ID\"},\"offset\":{\"type\":\"integer\",\"description\":\"Zero-based offset\",\"default\":0,\"minimum\":0,\"maximum\":9223372036854775807},\"phase\":{\"type\":\"string\",\"description\":\"Optional exact node phase\"}},\"additionalProperties\":false}"); err != nil {
+		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"archive_uid\":{\"type\":\"string\",\"description\":\"Archive UID; omit for live workflow data\"},\"limit\":{\"type\":\"integer\",\"description\":\"Maximum nodes; defaults to 50\",\"default\":50,\"minimum\":1,\"maximum\":200},\"name\":{\"type\":\"string\",\"description\":\"Exact workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to ARGO_NAMESPACE\"},\"node_id\":{\"type\":\"string\",\"description\":\"Optional exact node ID\"},\"offset\":{\"type\":\"integer\",\"description\":\"Zero-based offset\",\"default\":0,\"minimum\":0,\"maximum\":9223372036854775807},\"phase\":{\"type\":\"string\",\"description\":\"Optional exact node phase\"}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowNodesInputRecovery(err, arguments)))
 		}
 		result, err := a.service.GetWorkflowNodes(ctx, payload)
@@ -2672,10 +2788,223 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowArtifactsInputRecovery(err, arguments)))
 			}
 		}
-		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"limit\":{\"type\":\"integer\",\"description\":\"Maximum artifacts; defaults to 50\",\"default\":50,\"minimum\":1,\"maximum\":200},\"name\":{\"type\":\"string\",\"description\":\"Exact workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to ARGO_NAMESPACE\"},\"node_id\":{\"type\":\"string\",\"description\":\"Optional exact node ID\"},\"offset\":{\"type\":\"integer\",\"description\":\"Zero-based offset\",\"default\":0,\"minimum\":0,\"maximum\":9223372036854775807}},\"additionalProperties\":false}"); err != nil {
+		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"archive_uid\":{\"type\":\"string\",\"description\":\"Archive UID; omit for live workflow data\"},\"limit\":{\"type\":\"integer\",\"description\":\"Maximum artifacts; defaults to 50\",\"default\":50,\"minimum\":1,\"maximum\":200},\"name\":{\"type\":\"string\",\"description\":\"Exact workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to ARGO_NAMESPACE\"},\"node_id\":{\"type\":\"string\",\"description\":\"Optional exact node ID\"},\"offset\":{\"type\":\"integer\",\"description\":\"Zero-based offset\",\"default\":0,\"minimum\":0,\"maximum\":9223372036854775807}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowArtifactsInputRecovery(err, arguments)))
 		}
 		result, err := a.service.GetWorkflowArtifacts(ctx, payload)
+		if err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, err)
+		}
+		structuredContent, serr := json.Marshal(result)
+		if serr != nil {
+			return false, serr
+		}
+		s := string(structuredContent)
+		final := &ToolsCallResult{
+			Content:           []*ContentItem{buildContentItem(a, s)},
+			StructuredContent: mcpJSONFromRaw(structuredContent),
+		}
+		a.log(ctx, "response", map[string]any{
+			"method": "tools/call",
+			"name":   p.Name,
+		})
+		return false, stream.SendAndClose(ctx, final)
+	case "read_workflow_artifact":
+		var payload *argo.ReadWorkflowArtifactPayload
+		rawFields, err := decodeMCPPayloadFields(arguments)
+		if err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", readWorkflowArtifactInputRecovery(err, arguments)))
+		}
+		if err := decodeMCPPayloadStrict(arguments, &payload); err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", readWorkflowArtifactInputRecovery(err, arguments)))
+		}
+		{
+			if _, ok := rawFields["direction"]; !ok {
+				payload.Direction = "outputs"
+			}
+			if _, ok := rawFields["offset_bytes"]; !ok {
+				payload.OffsetBytes = 0
+			}
+			if _, ok := rawFields["max_bytes"]; !ok {
+				payload.MaxBytes = 65536
+			}
+		}
+		{
+			if err := validateMCPPayloadRequired(rawFields, "name", false); err != nil {
+				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", readWorkflowArtifactInputRecovery(err, arguments)))
+			}
+			if err := validateMCPPayloadRequired(rawFields, "node_id", false); err != nil {
+				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", readWorkflowArtifactInputRecovery(err, arguments)))
+			}
+			if err := validateMCPPayloadRequired(rawFields, "artifact_name", false); err != nil {
+				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", readWorkflowArtifactInputRecovery(err, arguments)))
+			}
+		}
+		{
+			if err := validateMCPPayloadEnum(rawFields, "direction", false, "inputs", "outputs"); err != nil {
+				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", readWorkflowArtifactInputRecovery(err, arguments)))
+			}
+		}
+		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"name\",\"node_id\",\"artifact_name\"],\"properties\":{\"archive_uid\":{\"type\":\"string\",\"description\":\"Archive UID; omit for live workflow data\"},\"artifact_name\":{\"type\":\"string\",\"description\":\"Exact declared artifact name\"},\"direction\":{\"type\":\"string\",\"description\":\"Artifact direction\",\"enum\":[\"inputs\",\"outputs\"],\"default\":\"outputs\"},\"max_bytes\":{\"type\":\"integer\",\"description\":\"Maximum bytes to return\",\"default\":65536,\"minimum\":4,\"maximum\":262144},\"name\":{\"type\":\"string\",\"description\":\"Exact workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to ARGO_NAMESPACE\"},\"node_id\":{\"type\":\"string\",\"description\":\"Exact workflow node ID\"},\"offset_bytes\":{\"type\":\"integer\",\"description\":\"Byte offset\",\"default\":0,\"minimum\":0,\"maximum\":16777216}},\"additionalProperties\":false}"); err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", readWorkflowArtifactInputRecovery(err, arguments)))
+		}
+		result, err := a.service.ReadWorkflowArtifact(ctx, payload)
+		if err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, err)
+		}
+		structuredContent, serr := json.Marshal(result)
+		if serr != nil {
+			return false, serr
+		}
+		s := string(structuredContent)
+		final := &ToolsCallResult{
+			Content:           []*ContentItem{buildContentItem(a, s)},
+			StructuredContent: mcpJSONFromRaw(structuredContent),
+		}
+		a.log(ctx, "response", map[string]any{
+			"method": "tools/call",
+			"name":   p.Name,
+		})
+		return false, stream.SendAndClose(ctx, final)
+	case "get_resource_spec":
+		var payload *argo.GetResourceSpecPayload
+		rawFields, err := decodeMCPPayloadFields(arguments)
+		if err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getResourceSpecInputRecovery(err, arguments)))
+		}
+		if err := decodeMCPPayloadStrict(arguments, &payload); err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getResourceSpecInputRecovery(err, arguments)))
+		}
+		{
+			if _, ok := rawFields["section"]; !ok {
+				payload.Section = "summary"
+			}
+			if _, ok := rawFields["max_bytes"]; !ok {
+				payload.MaxBytes = 65536
+			}
+		}
+		{
+			if err := validateMCPPayloadRequired(rawFields, "kind", false); err != nil {
+				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getResourceSpecInputRecovery(err, arguments)))
+			}
+			if err := validateMCPPayloadRequired(rawFields, "name", false); err != nil {
+				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getResourceSpecInputRecovery(err, arguments)))
+			}
+		}
+		{
+			if err := validateMCPPayloadEnum(rawFields, "kind", false, "workflow", "workflow_template", "cluster_workflow_template", "cron_workflow"); err != nil {
+				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getResourceSpecInputRecovery(err, arguments)))
+			}
+			if err := validateMCPPayloadEnum(rawFields, "section", false, "summary", "arguments", "templates", "spec"); err != nil {
+				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getResourceSpecInputRecovery(err, arguments)))
+			}
+		}
+		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"kind\",\"name\"],\"properties\":{\"kind\":{\"type\":\"string\",\"description\":\"Resource kind\",\"enum\":[\"workflow\",\"workflow_template\",\"cluster_workflow_template\",\"cron_workflow\"]},\"max_bytes\":{\"type\":\"integer\",\"description\":\"Maximum serialized JSON bytes\",\"default\":65536,\"minimum\":1024,\"maximum\":262144},\"name\":{\"type\":\"string\",\"description\":\"Exact resource name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; forbidden for cluster scope\"},\"section\":{\"type\":\"string\",\"description\":\"Spec section\",\"enum\":[\"summary\",\"arguments\",\"templates\",\"spec\"],\"default\":\"summary\"},\"template_name\":{\"type\":\"string\",\"description\":\"Exact template name; valid only for templates\"}},\"additionalProperties\":false}"); err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getResourceSpecInputRecovery(err, arguments)))
+		}
+		result, err := a.service.GetResourceSpec(ctx, payload)
+		if err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, err)
+		}
+		structuredContent, serr := json.Marshal(result)
+		if serr != nil {
+			return false, serr
+		}
+		s := string(structuredContent)
+		final := &ToolsCallResult{
+			Content:           []*ContentItem{buildContentItem(a, s)},
+			StructuredContent: mcpJSONFromRaw(structuredContent),
+		}
+		a.log(ctx, "response", map[string]any{
+			"method": "tools/call",
+			"name":   p.Name,
+		})
+		return false, stream.SendAndClose(ctx, final)
+	case "get_workflow_pod_diagnostics":
+		var payload *argo.GetWorkflowPodDiagnosticsPayload
+		rawFields, err := decodeMCPPayloadFields(arguments)
+		if err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowPodDiagnosticsInputRecovery(err, arguments)))
+		}
+		if err := decodeMCPPayloadStrict(arguments, &payload); err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowPodDiagnosticsInputRecovery(err, arguments)))
+		}
+		{
+			if _, ok := rawFields["limit"]; !ok {
+				payload.Limit = 20
+			}
+		}
+		{
+			if err := validateMCPPayloadRequired(rawFields, "name", false); err != nil {
+				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowPodDiagnosticsInputRecovery(err, arguments)))
+			}
+		}
+		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"continue\":{\"type\":\"string\",\"description\":\"Opaque Kubernetes continuation token\"},\"limit\":{\"type\":\"integer\",\"description\":\"Maximum pods\",\"default\":20,\"minimum\":1,\"maximum\":50},\"name\":{\"type\":\"string\",\"description\":\"Exact workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to ARGO_NAMESPACE\"},\"pod_name\":{\"type\":\"string\",\"description\":\"Optional exact pod name\"}},\"additionalProperties\":false}"); err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowPodDiagnosticsInputRecovery(err, arguments)))
+		}
+		result, err := a.service.GetWorkflowPodDiagnostics(ctx, payload)
+		if err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, err)
+		}
+		structuredContent, serr := json.Marshal(result)
+		if serr != nil {
+			return false, serr
+		}
+		s := string(structuredContent)
+		final := &ToolsCallResult{
+			Content:           []*ContentItem{buildContentItem(a, s)},
+			StructuredContent: mcpJSONFromRaw(structuredContent),
+		}
+		a.log(ctx, "response", map[string]any{
+			"method": "tools/call",
+			"name":   p.Name,
+		})
+		return false, stream.SendAndClose(ctx, final)
+	case "wait_workflow":
+		var payload *argo.WaitWorkflowPayload
+		rawFields, err := decodeMCPPayloadFields(arguments)
+		if err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", waitWorkflowInputRecovery(err, arguments)))
+		}
+		if err := decodeMCPPayloadStrict(arguments, &payload); err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", waitWorkflowInputRecovery(err, arguments)))
+		}
+		{
+			if _, ok := rawFields["duration_seconds"]; !ok {
+				payload.DurationSeconds = 10
+			}
+			if _, ok := rawFields["poll_interval_seconds"]; !ok {
+				payload.PollIntervalSeconds = 2
+			}
+		}
+		{
+			if err := validateMCPPayloadRequired(rawFields, "name", false); err != nil {
+				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", waitWorkflowInputRecovery(err, arguments)))
+			}
+		}
+		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"duration_seconds\":{\"type\":\"integer\",\"description\":\"Maximum wait duration\",\"default\":10,\"minimum\":1,\"maximum\":30},\"name\":{\"type\":\"string\",\"description\":\"Exact workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to ARGO_NAMESPACE\"},\"poll_interval_seconds\":{\"type\":\"integer\",\"description\":\"Polling interval\",\"default\":2,\"minimum\":1,\"maximum\":5}},\"additionalProperties\":false}"); err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", waitWorkflowInputRecovery(err, arguments)))
+		}
+		result, err := a.service.WaitWorkflow(ctx, payload)
+		if err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, err)
+		}
+		structuredContent, serr := json.Marshal(result)
+		if serr != nil {
+			return false, serr
+		}
+		s := string(structuredContent)
+		final := &ToolsCallResult{
+			Content:           []*ContentItem{buildContentItem(a, s)},
+			StructuredContent: mcpJSONFromRaw(structuredContent),
+		}
+		a.log(ctx, "response", map[string]any{
+			"method": "tools/call",
+			"name":   p.Name,
+		})
+		return false, stream.SendAndClose(ctx, final)
+	case "get_server_context":
+		result, err := a.service.GetServerContext(ctx)
 		if err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, err)
 		}

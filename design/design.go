@@ -3,6 +3,8 @@ package design
 import (
 	. "github.com/CaliLuke/loom-mcp/v2/dsl"
 	. "github.com/CaliLuke/loom/dsl"
+
+	"github.com/CaliLuke/go-argo-mcp/internal/version"
 )
 
 var WorkflowSummary = Type("WorkflowSummary", func() {
@@ -45,7 +47,9 @@ var WorkflowLogsResult = Type("WorkflowLogsResult", func() {
 	Attribute("max_lines", Int, "Maximum matching entries returned; omitted when unlimited")
 	Attribute("note", String, "Explanation of empty or truncated results")
 	Attribute("logs", String, "Rendered log entries; empty when no entries match")
-	Required("namespace", "workflow", "container", "total_lines", "matching_lines", "returned_lines", "logs")
+	Attribute("source", String, "Log source: live or archive")
+	Attribute("truncated", Boolean, "Whether collection was bounded before all available content")
+	Required("namespace", "workflow", "container", "total_lines", "matching_lines", "returned_lines", "logs", "source", "truncated")
 })
 
 var ListWorkflowsResult = Type("ListWorkflowsResult", func() {
@@ -189,6 +193,10 @@ var WorkflowNodeSummary = Type("WorkflowNodeSummary", func() {
 	Attribute("started_at", String, "RFC3339 start timestamp")
 	Attribute("finished_at", String, "RFC3339 finish timestamp")
 	Attribute("message", String, "Diagnostic message, truncated to 4 KiB")
+	Attribute("input_parameters", MapOf(String, String), "Node input parameters")
+	Attribute("output_parameters", MapOf(String, String), "Node output parameters")
+	Attribute("output_result", String, "Node output result, truncated to 16 KiB")
+	Attribute("exit_code", String, "Node exit code")
 	Required("id", "name", "type", "children")
 })
 
@@ -278,6 +286,124 @@ var WorkflowArtifactsResult = Type("WorkflowArtifactsResult", func() {
 	Required("artifacts", "total", "count", "truncated", "fields_truncated")
 })
 
+var ArtifactContentResult = Type("ArtifactContentResult", func() {
+	Attribute("namespace", String, "Kubernetes namespace")
+	Attribute("name", String, "Workflow name")
+	Attribute("node_id", String, "Owning node ID")
+	Attribute("artifact_name", String, "Artifact name")
+	Attribute("direction", String, "Artifact direction", func() { Enum("inputs", "outputs") })
+	Attribute("text", String, "UTF-8 artifact text")
+	Attribute("offset_bytes", Int, "Requested byte offset")
+	Attribute("returned_bytes", Int, "Original artifact bytes returned")
+	Attribute("next_offset", Int, "Next byte offset; present only when more bytes remain")
+	Attribute("has_more", Boolean, "Whether more artifact bytes remain")
+	Attribute("source", String, "Data source; always argo")
+	Attribute("archive_uid", String, "Archive UID when reading retained workflow data")
+	Attribute("note", String, "Pagination or retention guidance")
+	Required("namespace", "name", "node_id", "artifact_name", "direction", "text", "offset_bytes", "returned_bytes", "has_more", "source")
+})
+
+var ResourceSpecResult = Type("ResourceSpecResult", func() {
+	Attribute("kind", String, "Resource kind")
+	Attribute("name", String, "Resource name")
+	Attribute("namespace", String, "Kubernetes namespace; absent for cluster-scoped resources")
+	Attribute("section", String, "Selected spec section")
+	Attribute("template_name", String, "Selected template name")
+	Attribute("spec_json", String, "Canonical JSON for the selected upstream fields")
+	Attribute("source", String, "Data source; always argo")
+	Required("kind", "name", "section", "spec_json", "source")
+})
+
+var PodCondition = Type("PodCondition", func() {
+	Attribute("type", String, "Condition type")
+	Attribute("status", String, "Condition status")
+	Attribute("reason", String, "Condition reason")
+	Attribute("message", String, "Condition message")
+	Required("type", "status", "reason", "message")
+})
+
+var ContainerState = Type("ContainerState", func() {
+	Attribute("status", String, "waiting, running, terminated, or unknown")
+	Attribute("reason", String, "State reason")
+	Attribute("message", String, "State message")
+	Attribute("exit_code", Int, "Termination exit code")
+	Attribute("started_at", String, "RFC3339 start timestamp")
+	Attribute("finished_at", String, "RFC3339 finish timestamp")
+	Required("status", "reason", "message")
+})
+
+var ContainerDiagnostic = Type("ContainerDiagnostic", func() {
+	Attribute("name", String, "Container name")
+	Attribute("restart_count", Int, "Container restart count")
+	Attribute("ready", Boolean, "Whether the container is ready")
+	Attribute("state", ContainerState, "Current container state")
+	Attribute("last_state", ContainerState, "Previous container state")
+	Required("name", "restart_count", "ready", "state", "last_state")
+})
+
+var PodDiagnosticEvent = Type("PodDiagnosticEvent", func() {
+	Attribute("type", String, "Event type")
+	Attribute("reason", String, "Event reason")
+	Attribute("message", String, "Event message")
+	Attribute("count", Int, "Occurrence count")
+	Attribute("first_timestamp", String, "First observation timestamp")
+	Attribute("last_timestamp", String, "Last observation timestamp")
+	Required("type", "reason", "message", "count", "first_timestamp", "last_timestamp")
+})
+
+var WorkflowPodDiagnostic = Type("WorkflowPodDiagnostic", func() {
+	Attribute("name", String, "Pod name")
+	Attribute("uid", String, "Pod UID")
+	Attribute("phase", String, "Pod phase")
+	Attribute("node_name", String, "Assigned Kubernetes node")
+	Attribute("conditions", ArrayOf(PodCondition), "Bounded pod conditions")
+	Attribute("init_containers", ArrayOf(ContainerDiagnostic), "Bounded init-container states")
+	Attribute("containers", ArrayOf(ContainerDiagnostic), "Bounded container states")
+	Attribute("events", ArrayOf(PodDiagnosticEvent), "UID-scoped Kubernetes events")
+	Attribute("events_truncated", Boolean, "Whether more events exist")
+	Attribute("truncated", Boolean, "Whether any pod field was shortened")
+	Attribute("events_error", String, "Safe per-pod event retrieval error")
+	Required("name", "uid", "phase", "node_name", "conditions", "init_containers", "containers", "events", "events_truncated", "truncated")
+})
+
+var WorkflowPodDiagnosticsResult = Type("WorkflowPodDiagnosticsResult", func() {
+	Attribute("namespace", String, "Kubernetes namespace")
+	Attribute("name", String, "Workflow name")
+	Attribute("pods", ArrayOf(WorkflowPodDiagnostic), "Workflow-owned pods")
+	Attribute("count", Int, "Pods returned")
+	Attribute("continue", String, "Opaque continuation token")
+	Attribute("has_more", Boolean, "Whether another Kubernetes page exists")
+	Attribute("truncated", Boolean, "Whether output fields were shortened")
+	Attribute("source", String, "Data source; always kubernetes")
+	Required("namespace", "name", "pods", "count", "has_more", "truncated", "source")
+})
+
+var WaitWorkflowResult = Type("WaitWorkflowResult", func() {
+	Attribute("workflow", WorkflowDetailResult, "Latest workflow detail")
+	Attribute("completed", Boolean, "Whether the workflow reached a terminal phase")
+	Attribute("timed_out", Boolean, "Whether the owned wait deadline expired")
+	Attribute("source", String, "Data source; always argo")
+	Required("workflow", "completed", "timed_out", "source")
+})
+
+var ServerContextResult = Type("ServerContextResult", func() {
+	Attribute("build_version", String, "CLI build version")
+	Attribute("mcp_version", String, "Declared MCP protocol version")
+	Attribute("transport", String, "Active MCP transport")
+	Attribute("default_namespace", String, "Configured default namespace")
+	Attribute("allowed_namespaces", ArrayOf(String), "Configured namespace allow list")
+	Attribute("denied_namespaces", ArrayOf(String), "Configured namespace deny list")
+	Attribute("allow_mutations", Boolean, "Whether mutations are enabled")
+	Attribute("allow_destructive", Boolean, "Whether destructive mutations are enabled")
+	Attribute("require_confirmation", Boolean, "Whether destructive confirmation is required")
+	Attribute("argo_configured", Boolean, "Whether Argo is configured")
+	Attribute("kubernetes_configured", Boolean, "Whether Kubernetes diagnostics are configured")
+	Attribute("argo_status", String, "Argo context status", func() { Enum("unconfigured", "available", "unavailable") })
+	Attribute("argo_version", String, "Upstream Argo version")
+	Attribute("note", String, "Namespace policy and upstream-status context")
+	Required("build_version", "mcp_version", "transport", "default_namespace", "allowed_namespaces", "denied_namespaces", "allow_mutations", "allow_destructive", "require_confirmation", "argo_configured", "kubernetes_configured", "argo_status", "note")
+})
+
 var LintResult = Type("LintResult", func() {
 	Attribute("valid", Boolean, "Whether Argo accepted the manifest")
 	Attribute("name", String, "Manifest resource name")
@@ -308,6 +434,25 @@ var mutationAnnotations = func() {
 var destructiveAnnotations = func() {
 	Meta("mcp:annotation:readOnlyHint", "false")
 	Meta("mcp:annotation:destructiveHint", "true")
+}
+
+var namespacedWorkflowReadPayload = func() {
+	Attribute("namespace", String, "Kubernetes namespace; defaults to ARGO_NAMESPACE")
+	Attribute("name", String, "Exact workflow name")
+}
+
+var namespacedWorkflowReadMethod = func(methodName, description string, payloadExtras func(), result any, toolName, toolDescription string) {
+	Method(methodName, func() {
+		Description(description)
+		readAnnotations()
+		Payload(func() {
+			namespacedWorkflowReadPayload()
+			payloadExtras()
+			Required("name")
+		})
+		Result(result)
+		Tool(toolName, toolDescription)
+	})
 }
 
 var _ = API("go-argo-mcp", func() {
@@ -382,8 +527,44 @@ var _ = Service("argo", func() {
 			RetryHint("Run the destructive tool in dry-run mode to obtain a fresh token, then retry once.")
 		})
 	})
+	Error("kubernetes_configuration_error", func() {
+		Remedy(func() {
+			RemedyCode("kubernetes.configure")
+			SafeMessage("Kubernetes diagnostics are not configured.")
+			RetryHint("Set KUBERNETES_API_URL and Kubernetes credentials, then retry.")
+		})
+	})
+	Error("kubernetes_access_denied", func() {
+		Remedy(func() {
+			RemedyCode("kubernetes.access.denied")
+			SafeMessage("Kubernetes denied access to the requested resource.")
+			RetryHint("Check the Kubernetes token and pods/events RBAC permissions.")
+		})
+	})
+	Error("kubernetes_not_found", func() {
+		Remedy(func() {
+			RemedyCode("kubernetes.resource.not_found")
+			SafeMessage("The requested Kubernetes resource was not found.")
+			RetryHint("Rediscover the current pod and retry.")
+		})
+	})
+	Error("kubernetes_api_error", func() {
+		Temporary()
+		Remedy(func() {
+			RemedyCode("kubernetes.api.retry")
+			SafeMessage("The Kubernetes API request failed.")
+			RetryHint("Check Kubernetes connectivity and retry.")
+		})
+	})
+	Error("kubernetes_response_error", func() {
+		Remedy(func() {
+			RemedyCode("kubernetes.response.invalid")
+			SafeMessage("Kubernetes returned an invalid or unsupported response.")
+			RetryHint("Check the inputs and Kubernetes server compatibility.")
+		})
+	})
 
-	MCP("go-argo-mcp", "0.1.0")
+	MCP("go-argo-mcp", version.MCPVersion)
 
 	Method("ListWorkflows", func() {
 		Description("List workflows in a namespace with an optional status filter.")
@@ -429,10 +610,14 @@ var _ = Service("argo", func() {
 				Default(200)
 				Minimum(0)
 			})
+			Attribute("source", String, "Log source", func() { Default("auto"); Enum("auto", "live", "archive") })
+			Attribute("node_id", String, "Exact archived node ID")
+			Attribute("archive_uid", String, "Archive UID")
+			Attribute("max_bytes", Int, "Maximum collected bytes; defaults to 1 MiB", func() { Default(1048576); Minimum(1024); Maximum(4194304) })
 			Required("workflow_name")
 		})
 		Result(WorkflowLogsResult)
-		Tool("get_workflow_logs", "Get the latest matching log entries from a workflow's pods")
+		Tool("get_workflow_logs", "Get bounded matching live or retained log entries for a workflow")
 	})
 
 	Method("TerminateWorkflow", func() {
@@ -589,6 +774,7 @@ var _ = Service("argo", func() {
 			Attribute("name", String, "Exact workflow name")
 			Attribute("phase", String, "Optional exact node phase")
 			Attribute("node_id", String, "Optional exact node ID")
+			Attribute("archive_uid", String, "Archive UID; omit for live workflow data")
 			Attribute("offset", Int, "Zero-based offset", func() { Default(0); Minimum(0) })
 			Attribute("limit", Int, "Maximum nodes; defaults to 50", func() { Default(50); Minimum(1); Maximum(200) })
 			Required("name")
@@ -597,19 +783,17 @@ var _ = Service("argo", func() {
 		Tool("get_workflow_nodes", "Get a filtered, bounded page of workflow nodes")
 	})
 
-	Method("GetWorkflowEvents", func() {
-		Description("Observe workflow-related Kubernetes events during a bounded live window; this is not historical event listing.")
-		readAnnotations()
-		Payload(func() {
-			Attribute("namespace", String, "Kubernetes namespace; defaults to ARGO_NAMESPACE")
-			Attribute("name", String, "Exact workflow name")
+	namespacedWorkflowReadMethod(
+		"GetWorkflowEvents",
+		"Observe workflow-related Kubernetes events during a bounded live window; this is not historical event listing.",
+		func() {
 			Attribute("limit", Int, "Maximum observed events; defaults to 50", func() { Default(50); Minimum(1); Maximum(200) })
 			Attribute("duration_seconds", Int, "Observation duration in seconds; defaults to 2", func() { Default(2); Minimum(1); Maximum(10) })
-			Required("name")
-		})
-		Result(WorkflowEventsResult)
-		Tool("get_workflow_events", "Observe events for one workflow during a bounded live window")
-	})
+		},
+		WorkflowEventsResult,
+		"get_workflow_events",
+		"Observe events for one workflow during a bounded live window",
+	)
 
 	Method("ListArchivedWorkflows", func() {
 		Description("List archived workflows in one authorized namespace.")
@@ -638,18 +822,88 @@ var _ = Service("argo", func() {
 	})
 
 	Method("GetWorkflowArtifacts", func() {
-		Description("Get bounded artifact metadata and safe Argo download links; binary retrieval is deferred.")
+		Description("Get bounded artifact metadata and safe Argo download links; use read_workflow_artifact for bounded text content.")
 		readAnnotations()
 		Payload(func() {
 			Attribute("namespace", String, "Kubernetes namespace; defaults to ARGO_NAMESPACE")
 			Attribute("name", String, "Exact workflow name")
 			Attribute("node_id", String, "Optional exact node ID")
+			Attribute("archive_uid", String, "Archive UID; omit for live workflow data")
 			Attribute("offset", Int, "Zero-based offset", func() { Default(0); Minimum(0) })
 			Attribute("limit", Int, "Maximum artifacts; defaults to 50", func() { Default(50); Minimum(1); Maximum(200) })
 			Required("name")
 		})
 		Result(WorkflowArtifactsResult)
 		Tool("get_workflow_artifacts", "Get artifact metadata and trusted Argo download links")
+	})
+
+	Method("ReadWorkflowArtifact", func() {
+		Description("Read a bounded UTF-8 chunk from an artifact declared by one workflow node.")
+		readAnnotations()
+		Payload(func() {
+			Attribute("namespace", String, "Kubernetes namespace; defaults to ARGO_NAMESPACE")
+			Attribute("name", String, "Exact workflow name")
+			Attribute("node_id", String, "Exact workflow node ID")
+			Attribute("artifact_name", String, "Exact declared artifact name")
+			Attribute("direction", String, "Artifact direction", func() { Default("outputs"); Enum("inputs", "outputs") })
+			Attribute("archive_uid", String, "Archive UID; omit for live workflow data")
+			Attribute("offset_bytes", Int, "Byte offset", func() { Default(0); Minimum(0); Maximum(16777216) })
+			Attribute("max_bytes", Int, "Maximum bytes to return", func() { Default(65536); Minimum(4); Maximum(262144) })
+			Required("name", "node_id", "artifact_name")
+		})
+		Result(ArtifactContentResult)
+		Tool("read_workflow_artifact", "Read bounded UTF-8 text from a declared workflow artifact")
+	})
+
+	Method("GetResourceSpec", func() {
+		Description("Get a preserved JSON section from an Argo resource specification.")
+		readAnnotations()
+		Payload(func() {
+			Attribute("kind", String, "Resource kind", func() { Enum("workflow", "workflow_template", "cluster_workflow_template", "cron_workflow") })
+			Attribute("name", String, "Exact resource name")
+			Attribute("namespace", String, "Kubernetes namespace; forbidden for cluster scope")
+			Attribute("section", String, "Spec section", func() { Default("summary"); Enum("summary", "arguments", "templates", "spec") })
+			Attribute("template_name", String, "Exact template name; valid only for templates")
+			Attribute("max_bytes", Int, "Maximum serialized JSON bytes", func() { Default(65536); Minimum(1024); Maximum(262144) })
+			Required("kind", "name")
+		})
+		Result(ResourceSpecResult)
+		Tool("get_resource_spec", "Get a preserved bounded section of an Argo resource specification")
+	})
+
+	Method("GetWorkflowPodDiagnostics", func() {
+		Description("Get bounded Kubernetes pod state and events for a live workflow.")
+		readAnnotations()
+		Payload(func() {
+			Attribute("namespace", String, "Kubernetes namespace; defaults to ARGO_NAMESPACE")
+			Attribute("name", String, "Exact workflow name")
+			Attribute("pod_name", String, "Optional exact pod name")
+			Attribute("limit", Int, "Maximum pods", func() { Default(20); Minimum(1); Maximum(50) })
+			Attribute("continue", String, "Opaque Kubernetes continuation token")
+			Required("name")
+		})
+		Result(WorkflowPodDiagnosticsResult)
+		Tool("get_workflow_pod_diagnostics", "Get workflow-owned pod failures, container states, and events")
+	})
+
+	namespacedWorkflowReadMethod(
+		"WaitWorkflow",
+		"Poll one workflow until it completes, the bounded duration expires, or the caller cancels.",
+		func() {
+			Attribute("duration_seconds", Int, "Maximum wait duration", func() { Default(10); Minimum(1); Maximum(30) })
+			Attribute("poll_interval_seconds", Int, "Polling interval", func() { Default(2); Minimum(1); Maximum(5) })
+		},
+		WaitWorkflowResult,
+		"wait_workflow",
+		"Wait briefly for a workflow to reach a terminal phase",
+	)
+
+	Method("GetServerContext", func() {
+		Description("Get sanitized server identity, policy, backend configuration, and Argo availability.")
+		readAnnotations()
+		Payload(func() {})
+		Result(ServerContextResult)
+		Tool("get_server_context", "Get sanitized server and backend context")
 	})
 
 	Method("LintWorkflow", func() {

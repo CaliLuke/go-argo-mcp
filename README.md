@@ -18,6 +18,11 @@ The table is the complete tool catalog. The integration test computes its total 
 | Workflows | `get_workflow_nodes` | Get filtered node summaries with offset pagination | true | false | n/a | `none` |
 | Workflows | `get_workflow_events` | Observe a bounded window of workflow events | true | false | n/a | `none` |
 | Workflows | `get_workflow_artifacts` | Get artifact metadata and trusted Argo download links | true | false | n/a | `none` |
+| Workflows | `read_workflow_artifact` | Read a bounded UTF-8 text artifact with byte pagination | true | false | n/a | `none` |
+| Workflows | `get_workflow_pod_diagnostics` | Get owned pod states and events through optional Kubernetes access | true | false | n/a | `none` |
+| Workflows | `wait_workflow` | Wait briefly for completion or return the latest status | true | false | n/a | `none` |
+| Resources | `get_resource_spec` | Inspect arguments, templates or complete resource specifications | true | false | n/a | `none` |
+| Server | `get_server_context` | Inspect versions, configured backends and local policy | true | false | n/a | `none` |
 | Workflows | `suspend_workflow` | Suspend a workflow | false | false | false | `MCP_ALLOW_MUTATIONS` |
 | Workflows | `resume_workflow` | Resume a whole workflow | false | false | false | `MCP_ALLOW_MUTATIONS` |
 | Workflows | `resubmit_workflow` | Create a workflow from an existing workflow | false | false | false | `MCP_ALLOW_MUTATIONS` |
@@ -40,7 +45,7 @@ The table is the complete tool catalog. The integration test computes its total 
 
 <!-- tool-catalog:end -->
 
-All tools call real Argo HTTP endpoints. There are no mock fallbacks.
+Resource tools call real Argo or explicitly configured Kubernetes endpoints. Server context also reports local settings. There are no mock fallbacks.
 
 CronWorkflow reads include every configured schedule and its timezone. `get_cron_workflow` reports the next nominal run when active; `when` and stop conditions can still prevent that run.
 
@@ -104,11 +109,99 @@ Node, archive, artifact, and event results apply field and collection bounds.
 Use `truncated`, `fields_truncated`, and `next_offset` to decide whether to
 request another page or account for shortened fields. Artifact results contain
 metadata and links on the configured Argo server. They do not contain object
-store credentials, signed URLs, or artifact bytes.
+store credentials or signed URLs. Use `read_workflow_artifact` to retrieve text contents.
 
 Archive tools require the Argo workflow archive and suitable archive RBAC.
 Every archive request includes the authorized namespace. The server rejects an
 archived workflow response from a different namespace.
+
+### Retained logs and text artifacts
+
+`get_workflow_logs` defaults to `source: "auto"`: it reads live logs, then checks
+retained log artifacts when live logs are empty or the log endpoint returns 404.
+Use `source: "archive"` to read retained artifacts directly, or `source: "live"`
+to disable fallback. The container defaults to `main`; a request for `wait`
+reads only `wait-logs`, never `main-logs`. Retrieval errors remain errors.
+
+Use `node_id` to select an exact node for retained logs. Replace `pod_name` with
+`node_id` when switching from live pod logs to artifacts. These selectors cannot
+be combined. For a deleted workflow, discover its UID with
+`list_archived_workflows` and pass `archive_uid` with its original name. Workflow
+archive retention does not itself retain logs.
+
+Log collection defaults to 1 MiB and accepts `max_bytes` from 1 KiB to 4 MiB.
+This bounds HTTP framing for live logs and artifact text for retained logs.
+`max_lines` defaults to 200; zero returns all collected lines. `truncated` means
+only a bounded prefix was collected, so its last lines are not necessarily the
+end of the full log. At most 20 nodes contribute retained logs per call; select
+one node to inspect it directly.
+
+```json
+{
+  "name": "get_workflow_logs",
+  "arguments": {
+    "namespace": "argo-ci",
+    "workflow_name": "build-123",
+    "source": "archive",
+    "node_id": "build-123-123456789",
+    "container": "main"
+  }
+}
+```
+
+`read_workflow_artifact` requires `name`, `node_id` and `artifact_name` from
+`get_workflow_artifacts`. `direction` defaults to `outputs`; `inputs` is also
+supported. It reads declared UTF-8 text artifacts, rejects NUL or compressed
+contents, and does not unpack archives. The default chunk is 64 KiB;
+`max_bytes` accepts 4 bytes through 256 KiB. Start at `offset_bytes: 0`, then
+replay `next_offset` while `has_more` is true. The largest offset is 16 MiB.
+A chunk that would require a larger next offset returns an error with guidance
+to use the artifact download link.
+Only the configured Argo origin can receive artifact requests and credentials.
+
+Node and artifact reads also accept `archive_uid`. Nodes include bounded input
+and output parameters, script results and exit codes. `fields_truncated`
+identifies clipped values.
+
+### Specifications, waiting and context
+
+`get_resource_spec` accepts `kind` values `workflow`, `workflow_template`,
+`cluster_workflow_template` and `cron_workflow`, plus an exact `name`. The
+`section` defaults to `summary`; select `arguments`, `templates` or `spec` for
+more detail. With `templates`, `template_name` selects one template. Values such
+as parameter defaults, images, commands, resource limits, retries and DAGs retain
+their upstream JSON representation. `spec_json` is a JSON string; the default
+limit is 64 KiB, with `max_bytes` from 1 KiB to 256 KiB. Oversized sections return
+an error and narrowing guidance. Cluster template reads omit `namespace` and
+use upstream cluster RBAC, as existing cluster template tools do.
+
+`wait_workflow` polls for up to ten seconds by default (range 1–30), every two
+seconds (range 1–5). It returns the latest workflow plus `completed` and
+`timed_out`. Failed and Error phases are completed states. Cancellation stops
+polling. `get_server_context` reports build/MCP/Argo versions, configured
+backends and local namespace/mutation policy without credentials or endpoint
+URLs. Its namespace policy does not enumerate upstream RBAC permissions.
+
+### Optional Kubernetes pod diagnostics
+
+`get_workflow_pod_diagnostics` needs separate Kubernetes read access. Set
+`KUBERNETES_API_URL` and, when required, `KUBERNETES_TOKEN`. An optional
+`KUBERNETES_CA_PEM` supplies trusted CA certificates. HTTPS is required except
+for literal loopback development endpoints. There is no kubeconfig or implicit
+credential discovery. Without this configuration the tool reports a Kubernetes
+configuration error; existing Argo tools continue to work.
+
+The tool checks the current workflow UID, selects pods by workflow label, and
+verifies their owner UID before returning container states, prior termination,
+restarts, conditions and pod events. It does not return pod environment values
+or full pod specifications. The caller needs pod and event read permissions.
+Event read failures appear in `events_error`; they do not conceal pod state.
+
+Use `name` and optional `namespace`; `pod_name` selects one owned pod. Lists
+return at most 20 pods by default (range 1–50), with opaque `continue` tokens.
+A filtered page can be empty and still have another page. Each pod has at most
+20 events; `events_truncated` identifies more. Results have field limits and a
+1 MiB overall cap. Lower the limit or select one pod when that cap is exceeded.
 
 ### Lint and submit
 
@@ -316,6 +409,9 @@ Configuration references: [Codex MCP commands](https://learn.chatgpt.com/docs/de
 | `ARGO_MCP_ALLOWED_ORIGINS` | none | Comma-separated exact HTTP(S) origins accepted in addition to the direct origin |
 | `ARGO_BASE_URL` | required | Argo Server API base URL |
 | `ARGO_NAMESPACE` | `default` | Namespace used when a tool omits one |
+| `KUBERNETES_API_URL` | unset | Optional Kubernetes API endpoint for pod diagnostics |
+| `KUBERNETES_TOKEN` | unset | Optional Kubernetes bearer token; separate from Argo credentials |
+| `KUBERNETES_CA_PEM` | unset | Optional PEM CA certificates for Kubernetes TLS |
 | `ARGO_TOKEN` | empty | Bearer token; takes precedence over Basic auth |
 | `ARGO_USERNAME` / `ARGO_PASSWORD` | empty | Basic authentication |
 | `ARGO_INSECURE_SKIP_TLS_VERIFY` | `false` | Disable certificate verification explicitly |
@@ -450,6 +546,16 @@ goreleaser check
 make formula-snapshot
 brew style ./dist/homebrew/Formula/go-argo-mcp.rb
 brew style ./dist/homebrew/Casks/go-argo-mcp.rb
+```
+
+Before a release, update `internal/version.MCPVersion`, run `make generate`, and
+add `docs/releases/v<version>.md`. The release workflow builds a candidate with
+the tag's version and runs `cmd/verify-release` before publication. This check
+requires the CLI version and MCP initialization identity to match. Use the same
+check on a downloaded release binary:
+
+```sh
+go run ./cmd/verify-release -binary /path/to/go-argo-mcp -version 0.3.0
 ```
 
 Pushing a `v*` tag creates GitHub release archives for macOS, Linux, and Windows. The release workflow then renders a checksummed macOS cask and multi-platform formula with `cmd/render-homebrew-formula` and commits both to `CaliLuke/homebrew-tap`. The repository must define a `HOMEBREW_TAP_GITHUB_TOKEN` Actions secret. Use a fine-grained personal access token limited to the `CaliLuke/homebrew-tap` repository with Contents read and write permission and Metadata read permission.

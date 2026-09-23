@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 	"time"
 
@@ -35,6 +36,13 @@ type ArgoService struct {
 	defaultNamespace string
 	policy           Policy
 	confirmations    *confirmation.Manager
+	buildVersion     string
+	transport        string
+	kubernetes       KubernetesDiagnostics
+}
+
+type KubernetesDiagnostics interface {
+	Diagnose(ctx context.Context, namespace, name, workflowUID, podName string, limit int, continueToken string) (*genargo.WorkflowPodDiagnosticsResult, error)
 }
 
 type ArgoServiceConfig struct {
@@ -42,6 +50,9 @@ type ArgoServiceConfig struct {
 	DefaultNamespace string
 	Policy           Policy
 	Confirmations    *confirmation.Manager
+	BuildVersion     string
+	Transport        string
+	Kubernetes       KubernetesDiagnostics
 }
 
 func NewArgoService(config ArgoServiceConfig) *ArgoService {
@@ -58,7 +69,24 @@ func NewArgoService(config ArgoServiceConfig) *ArgoService {
 		defaultNamespace: namespace,
 		policy:           config.Policy,
 		confirmations:    confirmations,
+		buildVersion:     config.BuildVersion,
+		transport:        config.Transport,
+		kubernetes:       normalizedKubernetesDiagnostics(config.Kubernetes),
 	}
+}
+
+func normalizedKubernetesDiagnostics(value KubernetesDiagnostics) KubernetesDiagnostics {
+	if value == nil {
+		return nil
+	}
+	ref := reflect.ValueOf(value)
+	switch ref.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		if ref.IsNil() {
+			return nil
+		}
+	}
+	return value
 }
 
 func (s *ArgoService) ListWorkflows(ctx context.Context, payload *genargo.ListWorkflowsPayload) (*genargo.ListWorkflowsResult, error) {
@@ -161,70 +189,6 @@ func (s *ArgoService) GetWorkflow(ctx context.Context, payload *genargo.GetWorkf
 	}
 	if duration := formatDuration(detail.Summary.StartedAt, detail.Summary.FinishedAt); duration != "" {
 		res.Duration = strPtr(duration)
-	}
-	return res, nil
-}
-
-func (s *ArgoService) GetWorkflowLogs(ctx context.Context, payload *genargo.GetWorkflowLogsPayload) (*genargo.WorkflowLogsResult, error) {
-	namespace := s.namespace(payload.Namespace)
-	if err := s.authorizeNamespace(namespace); err != nil {
-		return nil, err
-	}
-	workflowName := strings.TrimSpace(payload.WorkflowName)
-	if workflowName == "" {
-		return nil, fmt.Errorf("workflow_name is required")
-	}
-	container := stringDefault(payload.Container, "main")
-	search := stringPtrValue(payload.Search)
-	maxLines := payload.MaxLines
-	podName := stringPtrValue(payload.PodName)
-
-	client, err := s.requireClient()
-	if err != nil {
-		return nil, err
-	}
-	entries, err := client.GetWorkflowLogs(ctx, namespace, workflowName, podName, container)
-	if err != nil {
-		return nil, mapArgoError(err, argoTarget{action: "get logs for", resource: "Workflow", namespace: namespace, name: workflowName, listTool: "list_workflows"})
-	}
-
-	total := len(entries)
-	filtered := entries
-	if search != "" {
-		filtered = filterLogs(entries, search)
-	}
-	matching := len(filtered)
-	if maxLines > 0 && len(filtered) > maxLines {
-		filtered = filtered[len(filtered)-maxLines:]
-	}
-	returned := len(filtered)
-	rendered := renderLogs(filtered)
-
-	res := &genargo.WorkflowLogsResult{
-		Namespace:     namespace,
-		Workflow:      workflowName,
-		Container:     container,
-		TotalLines:    total,
-		MatchingLines: matching,
-		ReturnedLines: returned,
-		Logs:          rendered,
-	}
-	if podName != "" {
-		res.Pod = strPtr(podName)
-	}
-	if search != "" {
-		res.SearchTerm = strPtr(search)
-	}
-	if maxLines > 0 {
-		res.MaxLines = intPtr(maxLines)
-	}
-	switch {
-	case total == 0:
-		res.Note = strPtr(fmt.Sprintf("Argo returned no log entries for Workflow %q in namespace %q and container %q. The pods may have produced no logs, may have been removed, or logs may no longer be retained.", workflowName, namespace, container))
-	case search != "" && matching == 0:
-		res.Note = strPtr(fmt.Sprintf("No log entries matched %q among the %d entries returned by Argo.", search, total))
-	case matching > returned:
-		res.Note = strPtr(fmt.Sprintf("Showing last %d of %d matching lines", returned, matching))
 	}
 	return res, nil
 }
@@ -721,6 +685,10 @@ func mapArgoError(err error, target argoTarget) error {
 }
 
 func mapNewArgoError(err error, target argoTarget) error {
+	var named loom.LoomErrorNamer
+	if errors.As(err, &named) {
+		return err
+	}
 	var httpErr *argoapi.HTTPError
 	if errors.As(err, &httpErr) {
 		switch httpErr.StatusCode {
@@ -863,7 +831,6 @@ func suspensionAction(suspend bool) string {
 }
 
 func strPtr(value string) *string { return &value }
-func intPtr(value int) *int       { return &value }
 func boolPtr(value bool) *bool    { return &value }
 
 func stringPtrValue(value *string) string {

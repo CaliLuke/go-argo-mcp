@@ -35,7 +35,7 @@ func TestHTTPTransportsUseProductionBootstrap(t *testing.T) {
 			for attempt := 0; attempt < 2; attempt++ {
 				session := connectHTTP(t, httpServer.URL+"/rpc")
 				listed, err := session.ListTools(testContext(t), nil)
-				if err != nil || len(listed.Tools) != 25 {
+				if err != nil || len(listed.Tools) != 30 {
 					t.Fatalf("ListTools: count=%d err=%v", len(listed.Tools), err)
 				}
 				result, err := session.CallTool(testContext(t), &mcp.CallToolParams{Name: "get_workflow", Arguments: map[string]any{"name": "build-123"}})
@@ -632,7 +632,7 @@ func connectChild(t *testing.T, child *stdioChild) *mcp.ClientSession {
 func assertChildRead(t *testing.T, session *mcp.ClientSession) {
 	t.Helper()
 	listed, err := session.ListTools(testContext(t), nil)
-	if err != nil || len(listed.Tools) != 25 {
+	if err != nil || len(listed.Tools) != 30 {
 		t.Fatalf("ListTools: count=%d err=%v", len(listed.Tools), err)
 	}
 	result, err := session.CallTool(testContext(t), &mcp.CallToolParams{Name: "get_workflow", Arguments: map[string]any{"name": "build-123"}})

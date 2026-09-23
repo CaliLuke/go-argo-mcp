@@ -33,6 +33,11 @@ type Client struct {
 	ListArchivedWorkflowsEndpoint        loom.Endpoint
 	GetArchivedWorkflowEndpoint          loom.Endpoint
 	GetWorkflowArtifactsEndpoint         loom.Endpoint
+	ReadWorkflowArtifactEndpoint         loom.Endpoint
+	GetResourceSpecEndpoint              loom.Endpoint
+	GetWorkflowPodDiagnosticsEndpoint    loom.Endpoint
+	WaitWorkflowEndpoint                 loom.Endpoint
+	GetServerContextEndpoint             loom.Endpoint
 	LintWorkflowEndpoint                 loom.Endpoint
 	LintWorkflowTemplateEndpoint         loom.Endpoint
 	SubmitWorkflowTemplateEndpoint       loom.Endpoint
@@ -43,8 +48,8 @@ type Client struct {
 }
 
 // NewClient initializes a "argo" service client given the endpoints.
-func NewClient(listWorkflows, getWorkflow, getWorkflowLogs, terminateWorkflow, retryWorkflow, listCronWorkflows, getCronWorkflow, getCronHistory, toggleCronSuspension, listWorkflowTemplates, getWorkflowTemplate, listClusterWorkflowTemplates, getClusterWorkflowTemplate, getWorkflowNodes, getWorkflowEvents, listArchivedWorkflows, getArchivedWorkflow, getWorkflowArtifacts, lintWorkflow, lintWorkflowTemplate, submitWorkflowTemplate, suspendWorkflow, resumeWorkflow, resubmitWorkflow, triggerCronWorkflow loom.Endpoint) *Client {
-	return &Client{ListWorkflowsEndpoint: listWorkflows, GetWorkflowEndpoint: getWorkflow, GetWorkflowLogsEndpoint: getWorkflowLogs, TerminateWorkflowEndpoint: terminateWorkflow, RetryWorkflowEndpoint: retryWorkflow, ListCronWorkflowsEndpoint: listCronWorkflows, GetCronWorkflowEndpoint: getCronWorkflow, GetCronHistoryEndpoint: getCronHistory, ToggleCronSuspensionEndpoint: toggleCronSuspension, ListWorkflowTemplatesEndpoint: listWorkflowTemplates, GetWorkflowTemplateEndpoint: getWorkflowTemplate, ListClusterWorkflowTemplatesEndpoint: listClusterWorkflowTemplates, GetClusterWorkflowTemplateEndpoint: getClusterWorkflowTemplate, GetWorkflowNodesEndpoint: getWorkflowNodes, GetWorkflowEventsEndpoint: getWorkflowEvents, ListArchivedWorkflowsEndpoint: listArchivedWorkflows, GetArchivedWorkflowEndpoint: getArchivedWorkflow, GetWorkflowArtifactsEndpoint: getWorkflowArtifacts, LintWorkflowEndpoint: lintWorkflow, LintWorkflowTemplateEndpoint: lintWorkflowTemplate, SubmitWorkflowTemplateEndpoint: submitWorkflowTemplate, SuspendWorkflowEndpoint: suspendWorkflow, ResumeWorkflowEndpoint: resumeWorkflow, ResubmitWorkflowEndpoint: resubmitWorkflow, TriggerCronWorkflowEndpoint: triggerCronWorkflow}
+func NewClient(listWorkflows, getWorkflow, getWorkflowLogs, terminateWorkflow, retryWorkflow, listCronWorkflows, getCronWorkflow, getCronHistory, toggleCronSuspension, listWorkflowTemplates, getWorkflowTemplate, listClusterWorkflowTemplates, getClusterWorkflowTemplate, getWorkflowNodes, getWorkflowEvents, listArchivedWorkflows, getArchivedWorkflow, getWorkflowArtifacts, readWorkflowArtifact, getResourceSpec, getWorkflowPodDiagnostics, waitWorkflow, getServerContext, lintWorkflow, lintWorkflowTemplate, submitWorkflowTemplate, suspendWorkflow, resumeWorkflow, resubmitWorkflow, triggerCronWorkflow loom.Endpoint) *Client {
+	return &Client{ListWorkflowsEndpoint: listWorkflows, GetWorkflowEndpoint: getWorkflow, GetWorkflowLogsEndpoint: getWorkflowLogs, TerminateWorkflowEndpoint: terminateWorkflow, RetryWorkflowEndpoint: retryWorkflow, ListCronWorkflowsEndpoint: listCronWorkflows, GetCronWorkflowEndpoint: getCronWorkflow, GetCronHistoryEndpoint: getCronHistory, ToggleCronSuspensionEndpoint: toggleCronSuspension, ListWorkflowTemplatesEndpoint: listWorkflowTemplates, GetWorkflowTemplateEndpoint: getWorkflowTemplate, ListClusterWorkflowTemplatesEndpoint: listClusterWorkflowTemplates, GetClusterWorkflowTemplateEndpoint: getClusterWorkflowTemplate, GetWorkflowNodesEndpoint: getWorkflowNodes, GetWorkflowEventsEndpoint: getWorkflowEvents, ListArchivedWorkflowsEndpoint: listArchivedWorkflows, GetArchivedWorkflowEndpoint: getArchivedWorkflow, GetWorkflowArtifactsEndpoint: getWorkflowArtifacts, ReadWorkflowArtifactEndpoint: readWorkflowArtifact, GetResourceSpecEndpoint: getResourceSpec, GetWorkflowPodDiagnosticsEndpoint: getWorkflowPodDiagnostics, WaitWorkflowEndpoint: waitWorkflow, GetServerContextEndpoint: getServerContext, LintWorkflowEndpoint: lintWorkflow, LintWorkflowTemplateEndpoint: lintWorkflowTemplate, SubmitWorkflowTemplateEndpoint: submitWorkflowTemplate, SuspendWorkflowEndpoint: suspendWorkflow, ResumeWorkflowEndpoint: resumeWorkflow, ResubmitWorkflowEndpoint: resubmitWorkflow, TriggerCronWorkflowEndpoint: triggerCronWorkflow}
 }
 
 // ListWorkflows calls the "ListWorkflows" endpoint of the "argo" service.
@@ -58,6 +63,11 @@ func NewClient(listWorkflows, getWorkflow, getWorkflowLogs, terminateWorkflow, r
 // - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
+// - "kubernetes_configuration_error" (type *loom.ServiceError)
+// - "kubernetes_access_denied" (type *loom.ServiceError)
+// - "kubernetes_not_found" (type *loom.ServiceError)
+// - "kubernetes_api_error" (type *loom.ServiceError)
+// - "kubernetes_response_error" (type *loom.ServiceError)
 // - error: internal error
 func (c *Client) ListWorkflows(ctx context.Context, p *ListWorkflowsPayload) (res *ListWorkflowsResult, err error) {
 	var ires any
@@ -79,6 +89,11 @@ func (c *Client) ListWorkflows(ctx context.Context, p *ListWorkflowsPayload) (re
 // - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
+// - "kubernetes_configuration_error" (type *loom.ServiceError)
+// - "kubernetes_access_denied" (type *loom.ServiceError)
+// - "kubernetes_not_found" (type *loom.ServiceError)
+// - "kubernetes_api_error" (type *loom.ServiceError)
+// - "kubernetes_response_error" (type *loom.ServiceError)
 // - error: internal error
 func (c *Client) GetWorkflow(ctx context.Context, p *GetWorkflowPayload) (res *WorkflowDetailResult, err error) {
 	var ires any
@@ -100,6 +115,11 @@ func (c *Client) GetWorkflow(ctx context.Context, p *GetWorkflowPayload) (res *W
 // - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
+// - "kubernetes_configuration_error" (type *loom.ServiceError)
+// - "kubernetes_access_denied" (type *loom.ServiceError)
+// - "kubernetes_not_found" (type *loom.ServiceError)
+// - "kubernetes_api_error" (type *loom.ServiceError)
+// - "kubernetes_response_error" (type *loom.ServiceError)
 // - error: internal error
 func (c *Client) GetWorkflowLogs(ctx context.Context, p *GetWorkflowLogsPayload) (res *WorkflowLogsResult, err error) {
 	var ires any
@@ -122,6 +142,11 @@ func (c *Client) GetWorkflowLogs(ctx context.Context, p *GetWorkflowLogsPayload)
 // - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
+// - "kubernetes_configuration_error" (type *loom.ServiceError)
+// - "kubernetes_access_denied" (type *loom.ServiceError)
+// - "kubernetes_not_found" (type *loom.ServiceError)
+// - "kubernetes_api_error" (type *loom.ServiceError)
+// - "kubernetes_response_error" (type *loom.ServiceError)
 // - error: internal error
 func (c *Client) TerminateWorkflow(ctx context.Context, p *TerminateWorkflowPayload) (res *ActionResult, err error) {
 	var ires any
@@ -143,6 +168,11 @@ func (c *Client) TerminateWorkflow(ctx context.Context, p *TerminateWorkflowPayl
 // - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
+// - "kubernetes_configuration_error" (type *loom.ServiceError)
+// - "kubernetes_access_denied" (type *loom.ServiceError)
+// - "kubernetes_not_found" (type *loom.ServiceError)
+// - "kubernetes_api_error" (type *loom.ServiceError)
+// - "kubernetes_response_error" (type *loom.ServiceError)
 // - error: internal error
 func (c *Client) RetryWorkflow(ctx context.Context, p *RetryWorkflowPayload) (res *ActionResult, err error) {
 	var ires any
@@ -165,6 +195,11 @@ func (c *Client) RetryWorkflow(ctx context.Context, p *RetryWorkflowPayload) (re
 // - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
+// - "kubernetes_configuration_error" (type *loom.ServiceError)
+// - "kubernetes_access_denied" (type *loom.ServiceError)
+// - "kubernetes_not_found" (type *loom.ServiceError)
+// - "kubernetes_api_error" (type *loom.ServiceError)
+// - "kubernetes_response_error" (type *loom.ServiceError)
 // - error: internal error
 func (c *Client) ListCronWorkflows(ctx context.Context, p *ListCronWorkflowsPayload) (res *ListCronWorkflowsResult, err error) {
 	var ires any
@@ -186,6 +221,11 @@ func (c *Client) ListCronWorkflows(ctx context.Context, p *ListCronWorkflowsPayl
 // - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
+// - "kubernetes_configuration_error" (type *loom.ServiceError)
+// - "kubernetes_access_denied" (type *loom.ServiceError)
+// - "kubernetes_not_found" (type *loom.ServiceError)
+// - "kubernetes_api_error" (type *loom.ServiceError)
+// - "kubernetes_response_error" (type *loom.ServiceError)
 // - error: internal error
 func (c *Client) GetCronWorkflow(ctx context.Context, p *GetCronWorkflowPayload) (res *CronWorkflowDetailResult, err error) {
 	var ires any
@@ -207,6 +247,11 @@ func (c *Client) GetCronWorkflow(ctx context.Context, p *GetCronWorkflowPayload)
 // - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
+// - "kubernetes_configuration_error" (type *loom.ServiceError)
+// - "kubernetes_access_denied" (type *loom.ServiceError)
+// - "kubernetes_not_found" (type *loom.ServiceError)
+// - "kubernetes_api_error" (type *loom.ServiceError)
+// - "kubernetes_response_error" (type *loom.ServiceError)
 // - error: internal error
 func (c *Client) GetCronHistory(ctx context.Context, p *GetCronHistoryPayload) (res *CronHistoryResult, err error) {
 	var ires any
@@ -229,6 +274,11 @@ func (c *Client) GetCronHistory(ctx context.Context, p *GetCronHistoryPayload) (
 // - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
+// - "kubernetes_configuration_error" (type *loom.ServiceError)
+// - "kubernetes_access_denied" (type *loom.ServiceError)
+// - "kubernetes_not_found" (type *loom.ServiceError)
+// - "kubernetes_api_error" (type *loom.ServiceError)
+// - "kubernetes_response_error" (type *loom.ServiceError)
 // - error: internal error
 func (c *Client) ToggleCronSuspension(ctx context.Context, p *ToggleCronSuspensionPayload) (res *ActionResult, err error) {
 	var ires any
@@ -251,6 +301,11 @@ func (c *Client) ToggleCronSuspension(ctx context.Context, p *ToggleCronSuspensi
 // - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
+// - "kubernetes_configuration_error" (type *loom.ServiceError)
+// - "kubernetes_access_denied" (type *loom.ServiceError)
+// - "kubernetes_not_found" (type *loom.ServiceError)
+// - "kubernetes_api_error" (type *loom.ServiceError)
+// - "kubernetes_response_error" (type *loom.ServiceError)
 // - error: internal error
 func (c *Client) ListWorkflowTemplates(ctx context.Context, p *ListWorkflowTemplatesPayload) (res *ListWorkflowTemplatesResult, err error) {
 	var ires any
@@ -273,6 +328,11 @@ func (c *Client) ListWorkflowTemplates(ctx context.Context, p *ListWorkflowTempl
 // - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
+// - "kubernetes_configuration_error" (type *loom.ServiceError)
+// - "kubernetes_access_denied" (type *loom.ServiceError)
+// - "kubernetes_not_found" (type *loom.ServiceError)
+// - "kubernetes_api_error" (type *loom.ServiceError)
+// - "kubernetes_response_error" (type *loom.ServiceError)
 // - error: internal error
 func (c *Client) GetWorkflowTemplate(ctx context.Context, p *GetWorkflowTemplatePayload) (res *WorkflowTemplateDetailResult, err error) {
 	var ires any
@@ -295,6 +355,11 @@ func (c *Client) GetWorkflowTemplate(ctx context.Context, p *GetWorkflowTemplate
 // - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
+// - "kubernetes_configuration_error" (type *loom.ServiceError)
+// - "kubernetes_access_denied" (type *loom.ServiceError)
+// - "kubernetes_not_found" (type *loom.ServiceError)
+// - "kubernetes_api_error" (type *loom.ServiceError)
+// - "kubernetes_response_error" (type *loom.ServiceError)
 // - error: internal error
 func (c *Client) ListClusterWorkflowTemplates(ctx context.Context, p *ListClusterWorkflowTemplatesPayload) (res *ListClusterWorkflowTemplatesResult, err error) {
 	var ires any
@@ -317,6 +382,11 @@ func (c *Client) ListClusterWorkflowTemplates(ctx context.Context, p *ListCluste
 // - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
+// - "kubernetes_configuration_error" (type *loom.ServiceError)
+// - "kubernetes_access_denied" (type *loom.ServiceError)
+// - "kubernetes_not_found" (type *loom.ServiceError)
+// - "kubernetes_api_error" (type *loom.ServiceError)
+// - "kubernetes_response_error" (type *loom.ServiceError)
 // - error: internal error
 func (c *Client) GetClusterWorkflowTemplate(ctx context.Context, p *GetClusterWorkflowTemplatePayload) (res *ClusterWorkflowTemplateDetailResult, err error) {
 	var ires any
@@ -338,6 +408,11 @@ func (c *Client) GetClusterWorkflowTemplate(ctx context.Context, p *GetClusterWo
 // - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
+// - "kubernetes_configuration_error" (type *loom.ServiceError)
+// - "kubernetes_access_denied" (type *loom.ServiceError)
+// - "kubernetes_not_found" (type *loom.ServiceError)
+// - "kubernetes_api_error" (type *loom.ServiceError)
+// - "kubernetes_response_error" (type *loom.ServiceError)
 // - error: internal error
 func (c *Client) GetWorkflowNodes(ctx context.Context, p *GetWorkflowNodesPayload) (res *WorkflowNodesResult, err error) {
 	var ires any
@@ -360,6 +435,11 @@ func (c *Client) GetWorkflowNodes(ctx context.Context, p *GetWorkflowNodesPayloa
 // - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
+// - "kubernetes_configuration_error" (type *loom.ServiceError)
+// - "kubernetes_access_denied" (type *loom.ServiceError)
+// - "kubernetes_not_found" (type *loom.ServiceError)
+// - "kubernetes_api_error" (type *loom.ServiceError)
+// - "kubernetes_response_error" (type *loom.ServiceError)
 // - error: internal error
 func (c *Client) GetWorkflowEvents(ctx context.Context, p *GetWorkflowEventsPayload) (res *WorkflowEventsResult, err error) {
 	var ires any
@@ -382,6 +462,11 @@ func (c *Client) GetWorkflowEvents(ctx context.Context, p *GetWorkflowEventsPayl
 // - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
+// - "kubernetes_configuration_error" (type *loom.ServiceError)
+// - "kubernetes_access_denied" (type *loom.ServiceError)
+// - "kubernetes_not_found" (type *loom.ServiceError)
+// - "kubernetes_api_error" (type *loom.ServiceError)
+// - "kubernetes_response_error" (type *loom.ServiceError)
 // - error: internal error
 func (c *Client) ListArchivedWorkflows(ctx context.Context, p *ListArchivedWorkflowsPayload) (res *ListArchivedWorkflowsResult, err error) {
 	var ires any
@@ -404,6 +489,11 @@ func (c *Client) ListArchivedWorkflows(ctx context.Context, p *ListArchivedWorkf
 // - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
+// - "kubernetes_configuration_error" (type *loom.ServiceError)
+// - "kubernetes_access_denied" (type *loom.ServiceError)
+// - "kubernetes_not_found" (type *loom.ServiceError)
+// - "kubernetes_api_error" (type *loom.ServiceError)
+// - "kubernetes_response_error" (type *loom.ServiceError)
 // - error: internal error
 func (c *Client) GetArchivedWorkflow(ctx context.Context, p *GetArchivedWorkflowPayload) (res *ArchivedWorkflowDetailResult, err error) {
 	var ires any
@@ -426,6 +516,11 @@ func (c *Client) GetArchivedWorkflow(ctx context.Context, p *GetArchivedWorkflow
 // - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
+// - "kubernetes_configuration_error" (type *loom.ServiceError)
+// - "kubernetes_access_denied" (type *loom.ServiceError)
+// - "kubernetes_not_found" (type *loom.ServiceError)
+// - "kubernetes_api_error" (type *loom.ServiceError)
+// - "kubernetes_response_error" (type *loom.ServiceError)
 // - error: internal error
 func (c *Client) GetWorkflowArtifacts(ctx context.Context, p *GetWorkflowArtifactsPayload) (res *WorkflowArtifactsResult, err error) {
 	var ires any
@@ -434,6 +529,138 @@ func (c *Client) GetWorkflowArtifacts(ctx context.Context, p *GetWorkflowArtifac
 		return
 	}
 	return ires.(*WorkflowArtifactsResult), nil
+}
+
+// ReadWorkflowArtifact calls the "ReadWorkflowArtifact" endpoint of the "argo"
+// service.
+// ReadWorkflowArtifact may return the following errors:
+// - "configuration_error" (type *loom.ServiceError)
+// - "argo_api_error" (type *loom.ServiceError)
+// - "argo_not_found" (type *loom.ServiceError)
+// - "argo_access_denied" (type *loom.ServiceError)
+// - "argo_request_rejected" (type *loom.ServiceError)
+// - "invalid_input" (type *loom.ServiceError)
+// - "invalid_state" (type *loom.ServiceError)
+// - "namespace_denied" (type *loom.ServiceError)
+// - "confirmation_invalid" (type *loom.ServiceError)
+// - "kubernetes_configuration_error" (type *loom.ServiceError)
+// - "kubernetes_access_denied" (type *loom.ServiceError)
+// - "kubernetes_not_found" (type *loom.ServiceError)
+// - "kubernetes_api_error" (type *loom.ServiceError)
+// - "kubernetes_response_error" (type *loom.ServiceError)
+// - error: internal error
+func (c *Client) ReadWorkflowArtifact(ctx context.Context, p *ReadWorkflowArtifactPayload) (res *ArtifactContentResult, err error) {
+	var ires any
+	ires, err = c.ReadWorkflowArtifactEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*ArtifactContentResult), nil
+}
+
+// GetResourceSpec calls the "GetResourceSpec" endpoint of the "argo" service.
+// GetResourceSpec may return the following errors:
+// - "configuration_error" (type *loom.ServiceError)
+// - "argo_api_error" (type *loom.ServiceError)
+// - "argo_not_found" (type *loom.ServiceError)
+// - "argo_access_denied" (type *loom.ServiceError)
+// - "argo_request_rejected" (type *loom.ServiceError)
+// - "invalid_input" (type *loom.ServiceError)
+// - "invalid_state" (type *loom.ServiceError)
+// - "namespace_denied" (type *loom.ServiceError)
+// - "confirmation_invalid" (type *loom.ServiceError)
+// - "kubernetes_configuration_error" (type *loom.ServiceError)
+// - "kubernetes_access_denied" (type *loom.ServiceError)
+// - "kubernetes_not_found" (type *loom.ServiceError)
+// - "kubernetes_api_error" (type *loom.ServiceError)
+// - "kubernetes_response_error" (type *loom.ServiceError)
+// - error: internal error
+func (c *Client) GetResourceSpec(ctx context.Context, p *GetResourceSpecPayload) (res *ResourceSpecResult, err error) {
+	var ires any
+	ires, err = c.GetResourceSpecEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*ResourceSpecResult), nil
+}
+
+// GetWorkflowPodDiagnostics calls the "GetWorkflowPodDiagnostics" endpoint of
+// the "argo" service.
+// GetWorkflowPodDiagnostics may return the following errors:
+// - "configuration_error" (type *loom.ServiceError)
+// - "argo_api_error" (type *loom.ServiceError)
+// - "argo_not_found" (type *loom.ServiceError)
+// - "argo_access_denied" (type *loom.ServiceError)
+// - "argo_request_rejected" (type *loom.ServiceError)
+// - "invalid_input" (type *loom.ServiceError)
+// - "invalid_state" (type *loom.ServiceError)
+// - "namespace_denied" (type *loom.ServiceError)
+// - "confirmation_invalid" (type *loom.ServiceError)
+// - "kubernetes_configuration_error" (type *loom.ServiceError)
+// - "kubernetes_access_denied" (type *loom.ServiceError)
+// - "kubernetes_not_found" (type *loom.ServiceError)
+// - "kubernetes_api_error" (type *loom.ServiceError)
+// - "kubernetes_response_error" (type *loom.ServiceError)
+// - error: internal error
+func (c *Client) GetWorkflowPodDiagnostics(ctx context.Context, p *GetWorkflowPodDiagnosticsPayload) (res *WorkflowPodDiagnosticsResult, err error) {
+	var ires any
+	ires, err = c.GetWorkflowPodDiagnosticsEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*WorkflowPodDiagnosticsResult), nil
+}
+
+// WaitWorkflow calls the "WaitWorkflow" endpoint of the "argo" service.
+// WaitWorkflow may return the following errors:
+// - "configuration_error" (type *loom.ServiceError)
+// - "argo_api_error" (type *loom.ServiceError)
+// - "argo_not_found" (type *loom.ServiceError)
+// - "argo_access_denied" (type *loom.ServiceError)
+// - "argo_request_rejected" (type *loom.ServiceError)
+// - "invalid_input" (type *loom.ServiceError)
+// - "invalid_state" (type *loom.ServiceError)
+// - "namespace_denied" (type *loom.ServiceError)
+// - "confirmation_invalid" (type *loom.ServiceError)
+// - "kubernetes_configuration_error" (type *loom.ServiceError)
+// - "kubernetes_access_denied" (type *loom.ServiceError)
+// - "kubernetes_not_found" (type *loom.ServiceError)
+// - "kubernetes_api_error" (type *loom.ServiceError)
+// - "kubernetes_response_error" (type *loom.ServiceError)
+// - error: internal error
+func (c *Client) WaitWorkflow(ctx context.Context, p *WaitWorkflowPayload) (res *WaitWorkflowResult, err error) {
+	var ires any
+	ires, err = c.WaitWorkflowEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*WaitWorkflowResult), nil
+}
+
+// GetServerContext calls the "GetServerContext" endpoint of the "argo" service.
+// GetServerContext may return the following errors:
+// - "configuration_error" (type *loom.ServiceError)
+// - "argo_api_error" (type *loom.ServiceError)
+// - "argo_not_found" (type *loom.ServiceError)
+// - "argo_access_denied" (type *loom.ServiceError)
+// - "argo_request_rejected" (type *loom.ServiceError)
+// - "invalid_input" (type *loom.ServiceError)
+// - "invalid_state" (type *loom.ServiceError)
+// - "namespace_denied" (type *loom.ServiceError)
+// - "confirmation_invalid" (type *loom.ServiceError)
+// - "kubernetes_configuration_error" (type *loom.ServiceError)
+// - "kubernetes_access_denied" (type *loom.ServiceError)
+// - "kubernetes_not_found" (type *loom.ServiceError)
+// - "kubernetes_api_error" (type *loom.ServiceError)
+// - "kubernetes_response_error" (type *loom.ServiceError)
+// - error: internal error
+func (c *Client) GetServerContext(ctx context.Context) (res *ServerContextResult, err error) {
+	var ires any
+	ires, err = c.GetServerContextEndpoint(ctx, nil)
+	if err != nil {
+		return
+	}
+	return ires.(*ServerContextResult), nil
 }
 
 // LintWorkflow calls the "LintWorkflow" endpoint of the "argo" service.
@@ -447,6 +674,11 @@ func (c *Client) GetWorkflowArtifacts(ctx context.Context, p *GetWorkflowArtifac
 // - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
+// - "kubernetes_configuration_error" (type *loom.ServiceError)
+// - "kubernetes_access_denied" (type *loom.ServiceError)
+// - "kubernetes_not_found" (type *loom.ServiceError)
+// - "kubernetes_api_error" (type *loom.ServiceError)
+// - "kubernetes_response_error" (type *loom.ServiceError)
 // - error: internal error
 func (c *Client) LintWorkflow(ctx context.Context, p *LintWorkflowPayload) (res *LintResult, err error) {
 	var ires any
@@ -469,6 +701,11 @@ func (c *Client) LintWorkflow(ctx context.Context, p *LintWorkflowPayload) (res 
 // - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
+// - "kubernetes_configuration_error" (type *loom.ServiceError)
+// - "kubernetes_access_denied" (type *loom.ServiceError)
+// - "kubernetes_not_found" (type *loom.ServiceError)
+// - "kubernetes_api_error" (type *loom.ServiceError)
+// - "kubernetes_response_error" (type *loom.ServiceError)
 // - error: internal error
 func (c *Client) LintWorkflowTemplate(ctx context.Context, p *LintWorkflowTemplatePayload) (res *LintResult, err error) {
 	var ires any
@@ -491,6 +728,11 @@ func (c *Client) LintWorkflowTemplate(ctx context.Context, p *LintWorkflowTempla
 // - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
+// - "kubernetes_configuration_error" (type *loom.ServiceError)
+// - "kubernetes_access_denied" (type *loom.ServiceError)
+// - "kubernetes_not_found" (type *loom.ServiceError)
+// - "kubernetes_api_error" (type *loom.ServiceError)
+// - "kubernetes_response_error" (type *loom.ServiceError)
 // - error: internal error
 func (c *Client) SubmitWorkflowTemplate(ctx context.Context, p *SubmitWorkflowTemplatePayload) (res *CreatedWorkflowResult, err error) {
 	var ires any
@@ -512,6 +754,11 @@ func (c *Client) SubmitWorkflowTemplate(ctx context.Context, p *SubmitWorkflowTe
 // - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
+// - "kubernetes_configuration_error" (type *loom.ServiceError)
+// - "kubernetes_access_denied" (type *loom.ServiceError)
+// - "kubernetes_not_found" (type *loom.ServiceError)
+// - "kubernetes_api_error" (type *loom.ServiceError)
+// - "kubernetes_response_error" (type *loom.ServiceError)
 // - error: internal error
 func (c *Client) SuspendWorkflow(ctx context.Context, p *SuspendWorkflowPayload) (res *ActionResult, err error) {
 	var ires any
@@ -533,6 +780,11 @@ func (c *Client) SuspendWorkflow(ctx context.Context, p *SuspendWorkflowPayload)
 // - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
+// - "kubernetes_configuration_error" (type *loom.ServiceError)
+// - "kubernetes_access_denied" (type *loom.ServiceError)
+// - "kubernetes_not_found" (type *loom.ServiceError)
+// - "kubernetes_api_error" (type *loom.ServiceError)
+// - "kubernetes_response_error" (type *loom.ServiceError)
 // - error: internal error
 func (c *Client) ResumeWorkflow(ctx context.Context, p *ResumeWorkflowPayload) (res *ActionResult, err error) {
 	var ires any
@@ -554,6 +806,11 @@ func (c *Client) ResumeWorkflow(ctx context.Context, p *ResumeWorkflowPayload) (
 // - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
+// - "kubernetes_configuration_error" (type *loom.ServiceError)
+// - "kubernetes_access_denied" (type *loom.ServiceError)
+// - "kubernetes_not_found" (type *loom.ServiceError)
+// - "kubernetes_api_error" (type *loom.ServiceError)
+// - "kubernetes_response_error" (type *loom.ServiceError)
 // - error: internal error
 func (c *Client) ResubmitWorkflow(ctx context.Context, p *ResubmitWorkflowPayload) (res *CreatedWorkflowResult, err error) {
 	var ires any
@@ -576,6 +833,11 @@ func (c *Client) ResubmitWorkflow(ctx context.Context, p *ResubmitWorkflowPayloa
 // - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
+// - "kubernetes_configuration_error" (type *loom.ServiceError)
+// - "kubernetes_access_denied" (type *loom.ServiceError)
+// - "kubernetes_not_found" (type *loom.ServiceError)
+// - "kubernetes_api_error" (type *loom.ServiceError)
+// - "kubernetes_response_error" (type *loom.ServiceError)
 // - error: internal error
 func (c *Client) TriggerCronWorkflow(ctx context.Context, p *TriggerCronWorkflowPayload) (res *CreatedWorkflowResult, err error) {
 	var ires any

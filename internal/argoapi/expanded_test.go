@@ -110,15 +110,15 @@ func TestExpandedMutationRoutesAndDeterministicParameters(t *testing.T) {
 
 func TestArtifactURLStaysUnderTrustedBase(t *testing.T) {
 	c := New(Config{BaseURL: "https://argo.example/base"})
-	got, err := c.ArtifactURL("team/a", "wf b", "node/x", "outputs", "report?.txt")
+	got, err := c.ArtifactURL("team a", "wf b", "node x", "outputs", "report?.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "https://argo.example/base/artifact-files/team%2Fa/workflows/wf%20b/node%2Fx/outputs/report%3F.txt"
+	want := "https://argo.example/base/artifact-files/team%20a/workflows/wf%20b/node%20x/outputs/report%3F.txt"
 	if got != want {
 		t.Fatalf("got %q want %q", got, want)
 	}
-	for _, bad := range []string{".", "..", "", "\n"} {
+	for _, bad := range []string{".", "..", "", "\n", "node/x", `node\\x`, "%2f"} {
 		if _, err := c.ArtifactURL("argo-ci", "wf", bad, "outputs", "a"); err == nil {
 			t.Fatalf("accepted node %q", bad)
 		}

@@ -63,6 +63,7 @@
       "source": "io.argoproj.workflow.v1alpha1.Inputs",
       "name": "Inputs",
       "fields": [
+        {"source": "parameters", "name": "Parameters", "goType": "[]Parameter", "json": "parameters", "schema": "array:ref:io.argoproj.workflow.v1alpha1.Parameter"},
         {"source": "artifacts", "name": "Artifacts", "goType": "[]Artifact", "json": "artifacts", "schema": "array:ref:io.argoproj.workflow.v1alpha1.Artifact"}
       ]
     },
@@ -71,7 +72,9 @@
       "name": "Outputs",
       "fields": [
         {"source": "parameters", "name": "Parameters", "goType": "[]Parameter", "json": "parameters", "schema": "array:ref:io.argoproj.workflow.v1alpha1.Parameter"},
-        {"source": "artifacts", "name": "Artifacts", "goType": "[]Artifact", "json": "artifacts", "schema": "array:ref:io.argoproj.workflow.v1alpha1.Artifact"}
+        {"source": "artifacts", "name": "Artifacts", "goType": "[]Artifact", "json": "artifacts", "schema": "array:ref:io.argoproj.workflow.v1alpha1.Artifact"},
+        {"source": "result", "name": "Result", "goType": "string", "json": "result", "schema": "string"},
+        {"source": "exitCode", "name": "ExitCode", "goType": "string", "json": "exitCode", "schema": "string"}
       ]
     },
     {

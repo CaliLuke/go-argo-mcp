@@ -98,8 +98,8 @@ func TestAllToolsAreAdvertisedAndCallable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools returned error: %v", err)
 	}
-	if len(listed.Tools) != 25 {
-		t.Fatalf("expected 25 tools, got %d", len(listed.Tools))
+	if len(listed.Tools) != 30 {
+		t.Fatalf("expected 30 tools, got %d", len(listed.Tools))
 	}
 	toolsByName := make(map[string]*mcp.Tool, len(listed.Tools))
 	for _, tool := range listed.Tools {

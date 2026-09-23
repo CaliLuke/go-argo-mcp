@@ -22,6 +22,7 @@ import (
 	genargo "github.com/CaliLuke/go-argo-mcp/gen/argo"
 	mcpargo "github.com/CaliLuke/go-argo-mcp/gen/mcp_argo"
 	"github.com/CaliLuke/go-argo-mcp/internal/argoapi"
+	"github.com/CaliLuke/go-argo-mcp/internal/kubeapi"
 	"github.com/CaliLuke/go-argo-mcp/internal/mcpaudit"
 	"github.com/CaliLuke/go-argo-mcp/internal/observability"
 	"github.com/CaliLuke/go-argo-mcp/internal/service"
@@ -113,6 +114,13 @@ func newApplication(ctx context.Context, cfg Config, deps dependencies) (*Applic
 
 	baseClient := newArgoBaseHTTPClient(cfg)
 	argoHTTPClient := runtime.WrapHTTPClient(baseClient, "argo-api", loomotel.HTTPMetricModeNone)
+	var kubernetes service.KubernetesDiagnostics
+	if cfg.KubernetesAPIURL != "" {
+		kubernetes, err = kubeapi.New(kubeapi.Config{BaseURL: cfg.KubernetesAPIURL, Token: cfg.KubernetesToken, CAPEM: cfg.KubernetesCAPEM, Timeout: 10 * time.Second})
+		if err != nil {
+			return cleanupOnError(fmt.Errorf("configure Kubernetes diagnostics: %w", err))
+		}
+	}
 	svc := service.NewArgoService(service.ArgoServiceConfig{
 		Client: argoapi.New(argoapi.Config{
 			BaseURL:            cfg.ArgoBaseURL,
@@ -125,6 +133,9 @@ func newApplication(ctx context.Context, cfg Config, deps dependencies) (*Applic
 			HTTPClient:         argoHTTPClient,
 		}),
 		DefaultNamespace: cfg.DefaultNamespace,
+		BuildVersion:     cfg.Version,
+		Transport:        string(cfg.Transport),
+		Kubernetes:       kubernetes,
 		Policy: service.Policy{
 			AllowMutations:      cfg.AllowMutations,
 			AllowDestructive:    cfg.AllowDestructive,

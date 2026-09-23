@@ -17,6 +17,8 @@ type WorkflowNode struct {
 	Children                                                     []string
 	StartedAt, FinishedAt, Message                               string
 	Inputs, Outputs                                              []Artifact
+	InputParameters, OutputParameters                            map[string]string
+	OutputResult, ExitCode                                       string
 }
 
 type Artifact struct {
@@ -44,6 +46,18 @@ func (c *Client) GetWorkflowData(ctx context.Context, namespace, name string) (*
 	return workflowDataFromModel(resp), nil
 }
 
+func (c *Client) GetArchivedWorkflowData(ctx context.Context, namespace, name, archiveUID string) (*WorkflowData, error) {
+	endpoint := c.baseURL + "/api/v1/archived-workflows/" + url.PathEscape(archiveUID)
+	var resp models.Workflow
+	if err := c.doJSON(ctx, http.MethodGet, endpoint, map[string]string{"namespace": namespace}, nil, &resp); err != nil {
+		return nil, err
+	}
+	if resp.Metadata.Namespace != namespace || resp.Metadata.Name != name || resp.Metadata.UID != archiveUID {
+		return nil, fmt.Errorf("archived workflow identity mismatch")
+	}
+	return workflowDataFromModel(resp), nil
+}
+
 func workflowDataFromModel(resp models.Workflow) *WorkflowData {
 	nodes := make([]WorkflowNode, 0, len(resp.Status.Nodes))
 	for key, n := range resp.Status.Nodes {
@@ -51,7 +65,14 @@ func workflowDataFromModel(resp models.Workflow) *WorkflowData {
 		if id == "" {
 			id = key
 		}
-		nodes = append(nodes, WorkflowNode{ID: id, Name: n.Name, DisplayName: n.DisplayName, Type: n.Type, Phase: n.Phase, TemplateName: n.TemplateName, BoundaryID: n.BoundaryID, Children: append([]string(nil), n.Children...), StartedAt: n.StartedAt, FinishedAt: n.FinishedAt, Message: n.Message, Inputs: artifacts(n.Inputs.Artifacts), Outputs: artifacts(n.Outputs.Artifacts)})
+		nodes = append(nodes, WorkflowNode{
+			ID: id, Name: n.Name, DisplayName: n.DisplayName, Type: n.Type, Phase: n.Phase,
+			TemplateName: n.TemplateName, BoundaryID: n.BoundaryID, Children: append([]string(nil), n.Children...),
+			StartedAt: n.StartedAt, FinishedAt: n.FinishedAt, Message: n.Message,
+			Inputs: artifacts(n.Inputs.Artifacts), Outputs: artifacts(n.Outputs.Artifacts),
+			InputParameters: renderParameters(n.Inputs.Parameters), OutputParameters: renderParameters(n.Outputs.Parameters),
+			OutputResult: n.Outputs.Result, ExitCode: n.Outputs.ExitCode,
+		})
 	}
 	detail := WorkflowDetail{Summary: workflowSummaryFromModel(resp), Message: resp.Status.Message, Labels: nonnilStringMap(resp.Metadata.Labels), Annotations: nonnilStringMap(resp.Metadata.Annotations), Parameters: renderParameters(resp.Spec.Arguments.Parameters), Outputs: renderParameters(resp.Status.Outputs.Parameters)}
 	return &WorkflowData{UID: resp.Metadata.UID, Detail: detail, Nodes: nodes}
@@ -174,13 +195,53 @@ func (c *Client) LintWorkflowTemplate(ctx context.Context, namespace string, man
 }
 
 func (c *Client) ArtifactURL(namespace, workflow, nodeID, direction, artifact string) (string, error) {
-	for _, value := range []string{namespace, workflow, nodeID, artifact} {
-		if strings.TrimSpace(value) == "" || value == "." || value == ".." || len(value) > 4096 || strings.ContainsAny(value, "\x00\r\n") {
+	return c.artifactURL(namespace, "workflows", workflow, nodeID, direction, artifact)
+}
+
+func (c *Client) ArchivedArtifactURL(namespace, archiveUID, nodeID, direction, artifact string) (string, error) {
+	return c.artifactURL(namespace, "archived-workflows", archiveUID, nodeID, direction, artifact)
+}
+
+func (c *Client) artifactURL(namespace, collection, workflowIdentity, nodeID, direction, artifact string) (string, error) {
+	for _, value := range []string{namespace, workflowIdentity, nodeID, artifact} {
+		if !safeArtifactSegment(value) {
 			return "", fmt.Errorf("invalid artifact link identity")
 		}
 	}
 	if direction != "inputs" && direction != "outputs" {
 		return "", fmt.Errorf("invalid artifact direction")
 	}
-	return c.baseURL + "/artifact-files/" + url.PathEscape(namespace) + "/workflows/" + url.PathEscape(workflow) + "/" + url.PathEscape(nodeID) + "/" + direction + "/" + url.PathEscape(artifact), nil
+	return c.baseURL + "/artifact-files/" + url.PathEscape(namespace) + "/" + collection + "/" + url.PathEscape(workflowIdentity) + "/" + url.PathEscape(nodeID) + "/" + direction + "/" + url.PathEscape(artifact), nil
+}
+
+func safeArtifactSegment(value string) bool {
+	if strings.TrimSpace(value) == "" || len(value) > 4096 {
+		return false
+	}
+	for range 3 {
+		if value == "." || value == ".." || strings.ContainsAny(value, "/\\") {
+			return false
+		}
+		for _, r := range value {
+			if r < 0x20 || r == 0x7f {
+				return false
+			}
+		}
+		decoded, err := url.PathUnescape(value)
+		if err != nil {
+			return false
+		}
+		if decoded == value {
+			return true
+		}
+		value = decoded
+	}
+	return false
+}
+
+func ValidatePathSegment(value string) error {
+	if !safeArtifactSegment(value) {
+		return fmt.Errorf("invalid path identity")
+	}
+	return nil
 }

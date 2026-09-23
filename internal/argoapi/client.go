@@ -229,48 +229,6 @@ func (c *Client) GetWorkflow(ctx context.Context, namespace, name string) (*Work
 	}, nil
 }
 
-func (c *Client) GetWorkflowLogs(ctx context.Context, namespace, workflowName, podName, container string) ([]WorkflowLogEntry, error) {
-	endpoint := c.baseURL + "/api/v1/workflows/" + url.PathEscape(namespace) + "/" + url.PathEscape(workflowName) + "/log"
-	query := map[string]string{"logOptions.container": container}
-	if podName != "" {
-		query["podName"] = podName
-	}
-	body, err := c.doText(ctx, http.MethodGet, endpoint, query, nil)
-	if err != nil {
-		return nil, err
-	}
-	lines := strings.Split(body, "\n")
-	entries := make([]WorkflowLogEntry, 0, len(lines))
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, ":") || strings.HasPrefix(line, "event:") ||
-			strings.HasPrefix(line, "id:") || strings.HasPrefix(line, "retry:") {
-			continue
-		}
-		line = strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-		var payload logEnvelope
-		if err := json.Unmarshal([]byte(line), &payload); err != nil {
-			return nil, fmt.Errorf("decode Argo log stream frame: %w", err)
-		}
-		if len(payload.Error) != 0 {
-			return nil, fmt.Errorf("argo log stream returned an error")
-		}
-		result := logResult{}
-		if !emptyJSONValue(payload.Result) {
-			if err := json.Unmarshal(payload.Result, &result); err != nil {
-				return nil, fmt.Errorf("decode Argo log stream result: %w", err)
-			}
-		} else {
-			result = logResult{PodName: payload.PodName, Content: payload.Content}
-		}
-		if result.Content == "" {
-			continue
-		}
-		entries = append(entries, WorkflowLogEntry(result))
-	}
-	return entries, nil
-}
-
 func (c *Client) RetryWorkflow(ctx context.Context, namespace, name string, restartSuccessful bool) error {
 	endpoint := c.baseURL + "/api/v1/workflows/" + url.PathEscape(namespace) + "/" + url.PathEscape(name) + "/retry"
 	body := models.WorkflowRetryRequest{
@@ -546,26 +504,6 @@ func (c *Client) doJSON(ctx context.Context, method, endpoint string, query map[
 		return fmt.Errorf("decode json from %s: %w", endpoint, err)
 	}
 	return nil
-}
-
-func (c *Client) doText(ctx context.Context, method, endpoint string, query map[string]string, body any) (string, error) {
-	req, err := c.newRequest(ctx, method, endpoint, query, body)
-	if err != nil {
-		return "", err
-	}
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("%s %s: %w", method, endpoint, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", &HTTPError{StatusCode: resp.StatusCode, Endpoint: endpoint}
-	}
-	var buf bytes.Buffer
-	if _, err := buf.ReadFrom(resp.Body); err != nil {
-		return "", fmt.Errorf("read body from %s: %w", endpoint, err)
-	}
-	return buf.String(), nil
 }
 
 func (c *Client) newRequest(ctx context.Context, method, endpoint string, query map[string]string, body any) (*http.Request, error) {

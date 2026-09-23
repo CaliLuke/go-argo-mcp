@@ -28,11 +28,7 @@ func (s *ArgoService) GetWorkflowNodes(ctx context.Context, p *genargo.GetWorkfl
 	if err != nil {
 		return nil, err
 	}
-	c, err := s.requireClient()
-	if err != nil {
-		return nil, err
-	}
-	wf, err := c.GetWorkflowData(ctx, ns, p.Name)
+	wf, err := s.lookupWorkflowData(ctx, ns, p.Name, pointerValue(p.ArchiveUID))
 	if err != nil {
 		return nil, mapNewArgoError(err, argoTarget{action: "get nodes for", resource: "Workflow", namespace: ns, name: p.Name, listTool: "list_workflows"})
 	}
@@ -72,6 +68,11 @@ func (s *ArgoService) GetWorkflowNodes(ctx context.Context, p *genargo.GetWorkfl
 		setString(&r.StartedAt, n.StartedAt, 256, &fields)
 		setString(&r.FinishedAt, n.FinishedAt, 256, &fields)
 		setString(&r.Message, n.Message, 4096, &fields)
+		r.InputParameters, ti = boundedNodeParameters(n.InputParameters)
+		r.OutputParameters, tn = boundedNodeParameters(n.OutputParameters)
+		fields = fields || ti || tn
+		setString(&r.OutputResult, n.OutputResult, 16384, &fields)
+		setString(&r.ExitCode, n.ExitCode, 256, &fields)
 		out = append(out, r)
 	}
 	res := &genargo.WorkflowNodesResult{Nodes: out, Total: total, Count: len(out), Truncated: more || fields, FieldsTruncated: fields}
@@ -101,7 +102,7 @@ func (s *ArgoService) GetWorkflowArtifacts(ctx context.Context, p *genargo.GetWo
 	if err != nil {
 		return nil, err
 	}
-	wf, err := c.GetWorkflowData(ctx, ns, p.Name)
+	wf, err := s.lookupWorkflowData(ctx, ns, p.Name, pointerValue(p.ArchiveUID))
 	if err != nil {
 		return nil, mapNewArgoError(err, argoTarget{action: "get artifacts for", resource: "Workflow", namespace: ns, name: p.Name, listTool: "list_workflows"})
 	}
@@ -144,7 +145,13 @@ func (s *ArgoService) GetWorkflowArtifacts(ctx context.Context, p *genargo.GetWo
 		if path != "" {
 			r.Path = &path
 		}
-		link, e := c.ArtifactURL(ns, p.Name, it.node, it.direction, it.artifact.Name)
+		var link string
+		var e error
+		if archiveUID := pointerValue(p.ArchiveUID); archiveUID != "" {
+			link, e = c.ArchivedArtifactURL(ns, archiveUID, it.node, it.direction, it.artifact.Name)
+		} else {
+			link, e = c.ArtifactURL(ns, p.Name, it.node, it.direction, it.artifact.Name)
+		}
 		if e == nil && len(link) <= 4096 {
 			r.DownloadURL = &link
 		} else {
@@ -161,6 +168,20 @@ func (s *ArgoService) GetWorkflowArtifacts(ctx context.Context, p *genargo.GetWo
 		res.Note = strPtr("Results are bounded; truncated indicates another page or shortened fields or omitted links.")
 	}
 	return res, nil
+}
+
+func (s *ArgoService) lookupWorkflowData(ctx context.Context, namespace, name, archiveUID string) (*argoapi.WorkflowData, error) {
+	if !safeReadSegment(namespace) || !safeReadSegment(name) || archiveUID != "" && !safeReadSegment(archiveUID) {
+		return nil, invalidInput("namespace, name, and archive_uid must be safe path segments")
+	}
+	c, err := s.requireClient()
+	if err != nil {
+		return nil, err
+	}
+	if archiveUID != "" {
+		return c.GetArchivedWorkflowData(ctx, namespace, name, archiveUID)
+	}
+	return c.GetWorkflowData(ctx, namespace, name)
 }
 
 func (s *ArgoService) GetWorkflowEvents(ctx context.Context, p *genargo.GetWorkflowEventsPayload) (*genargo.WorkflowEventsResult, error) {
@@ -469,23 +490,31 @@ func optional(value string) *string {
 	return &value
 }
 func boundedMap(in map[string]string) (map[string]string, bool) {
+	return boundedStringMap(in, 20, 1024)
+}
+
+func boundedNodeParameters(in map[string]string) (map[string]string, bool) {
+	return boundedStringMap(in, 128, 4096)
+}
+
+func boundedStringMap(in map[string]string, maxEntries, maxValueBytes int) (map[string]string, bool) {
 	keys := make([]string, 0, len(in))
-	for k := range in {
-		keys = append(keys, k)
+	for key := range in {
+		keys = append(keys, key)
 	}
 	sort.Strings(keys)
-	tr := len(keys) > 20
-	if len(keys) > 20 {
-		keys = keys[:20]
+	truncated := len(keys) > maxEntries
+	if len(keys) > maxEntries {
+		keys = keys[:maxEntries]
 	}
 	out := make(map[string]string, len(keys))
-	for _, k := range keys {
-		tk, a := truncateUTF8(k, 256)
-		tv, b := truncateUTF8(in[k], 1024)
-		tr = tr || a || b
-		out[tk] = tv
+	for _, key := range keys {
+		boundedKey, keyTruncated := truncateUTF8(key, 256)
+		boundedValue, valueTruncated := truncateUTF8(in[key], maxValueBytes)
+		truncated = truncated || keyTruncated || valueTruncated
+		out[boundedKey] = boundedValue
 	}
-	return out, tr
+	return out, truncated
 }
 func validateManifest(text, kind, namespace string, cluster bool) (json.RawMessage, string, error) {
 	if len([]byte(text)) > maxManifestBytes {

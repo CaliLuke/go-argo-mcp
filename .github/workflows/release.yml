@@ -41,6 +41,18 @@ jobs:
         run: |
           actionlint
           prek run --all-files
+      - name: Verify release candidate identity
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          case "$RELEASE_TAG" in
+            v*) ;;
+            *) echo "release tag must start with v" >&2; exit 1 ;;
+          esac
+          EXPECTED_VERSION="${RELEASE_TAG#v}"
+          test -n "$EXPECTED_VERSION"
+          CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$EXPECTED_VERSION" -o "$RUNNER_TEMP/go-argo-mcp-candidate" ./cmd/go-argo-mcp
+          go run ./cmd/verify-release -binary "$RUNNER_TEMP/go-argo-mcp-candidate" -version "$EXPECTED_VERSION"
       - name: Release binaries
         uses: goreleaser/goreleaser-action@v7.2.3
         with:

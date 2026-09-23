@@ -45,12 +45,15 @@ type Artifact struct {
 }
 
 type Inputs struct {
-	Artifacts []Artifact `json:"artifacts,omitempty"`
+	Parameters []Parameter `json:"parameters,omitempty"`
+	Artifacts  []Artifact  `json:"artifacts,omitempty"`
 }
 
 type Outputs struct {
 	Parameters []Parameter `json:"parameters,omitempty"`
 	Artifacts  []Artifact  `json:"artifacts,omitempty"`
+	Result     string      `json:"result,omitempty"`
+	ExitCode   string      `json:"exitCode,omitempty"`
 }
 
 type NodeStatus struct {

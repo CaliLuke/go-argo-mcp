@@ -390,3 +390,37 @@ func assertAuditOmits(t *testing.T, path string, forbidden ...string) {
 		}
 	}
 }
+
+func TestDiagnosticContentsNeverEnterAuditSummary(t *testing.T) {
+	for _, tool := range []string{"read_workflow_artifact", "get_workflow_logs", "get_resource_spec", "get_workflow_nodes", "get_workflow_pod_diagnostics"} {
+		t.Run(tool, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "audit.jsonl")
+			audit, err := Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer audit.Close()
+			info := testInfo{tool: tool, args: loom.JSONValue(`{"namespace":"argo-ci","name":"build"}`)}
+			_, err = audit.Interceptor()(context.Background(), info, &mcpargo.ToolsCallPayload{Name: tool}, func(context.Context, *mcpargo.ToolsCallPayload) (*mcpargo.ToolsCallResult, error) {
+				return &mcpargo.ToolsCallResult{StructuredContent: loom.JSONValue(`{"name":"build","namespace":"argo-ci","count":1,"text":"private-artifact","logs":"private-log","spec_json":"private-spec","input_parameters":{"a":"private-input"},"output_parameters":{"b":"private-output"},"pods":[{"events":[{"message":"private-event"}]}]}`)}, nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(data), "private-") {
+				t.Fatal("diagnostic payload leaked to audit")
+			}
+			var record Record
+			if err := json.Unmarshal(data, &record); err != nil {
+				t.Fatal(err)
+			}
+			if record.Status != "SUCCESS" || !strings.Contains(record.Summary, "build") {
+				t.Fatalf("safe audit outcome missing: %+v", record)
+			}
+		})
+	}
+}

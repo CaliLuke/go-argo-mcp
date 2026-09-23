@@ -52,6 +52,21 @@ func TestConfigDefaults(t *testing.T) {
 	}
 }
 
+func TestKubernetesConfigurationIsExplicitAndComplete(t *testing.T) {
+	lookup := func(values map[string]string) func(string) (string, bool) {
+		return func(key string) (string, bool) { value, ok := values[key]; return value, ok }
+	}
+	for _, values := range []map[string]string{{"KUBERNETES_TOKEN": "token"}, {"KUBERNETES_CA_PEM": "pem"}} {
+		if _, err := ConfigFromLookup(lookup(values)); err == nil {
+			t.Fatalf("accepted partial config: %#v", values)
+		}
+	}
+	cfg, err := ConfigFromLookup(lookup(map[string]string{"KUBERNETES_API_URL": "https://kube.test", "KUBERNETES_TOKEN": "token", "KUBERNETES_CA_PEM": "ca"}))
+	if err != nil || cfg.KubernetesAPIURL != "https://kube.test" || cfg.KubernetesToken != "token" || cfg.KubernetesCAPEM != "ca" {
+		t.Fatalf("cfg=%#v err=%v", cfg, err)
+	}
+}
+
 func TestStatelessRejectsSessionCompatibilityFlagConfig(t *testing.T) {
 	tests := []struct {
 		name      string

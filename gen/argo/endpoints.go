@@ -33,6 +33,11 @@ type Endpoints struct {
 	ListArchivedWorkflows        loom.Endpoint
 	GetArchivedWorkflow          loom.Endpoint
 	GetWorkflowArtifacts         loom.Endpoint
+	ReadWorkflowArtifact         loom.Endpoint
+	GetResourceSpec              loom.Endpoint
+	GetWorkflowPodDiagnostics    loom.Endpoint
+	WaitWorkflow                 loom.Endpoint
+	GetServerContext             loom.Endpoint
 	LintWorkflow                 loom.Endpoint
 	LintWorkflowTemplate         loom.Endpoint
 	SubmitWorkflowTemplate       loom.Endpoint
@@ -63,6 +68,11 @@ func NewEndpoints(s Service) *Endpoints {
 		ListArchivedWorkflows:        NewListArchivedWorkflowsEndpoint(s),
 		GetArchivedWorkflow:          NewGetArchivedWorkflowEndpoint(s),
 		GetWorkflowArtifacts:         NewGetWorkflowArtifactsEndpoint(s),
+		ReadWorkflowArtifact:         NewReadWorkflowArtifactEndpoint(s),
+		GetResourceSpec:              NewGetResourceSpecEndpoint(s),
+		GetWorkflowPodDiagnostics:    NewGetWorkflowPodDiagnosticsEndpoint(s),
+		WaitWorkflow:                 NewWaitWorkflowEndpoint(s),
+		GetServerContext:             NewGetServerContextEndpoint(s),
 		LintWorkflow:                 NewLintWorkflowEndpoint(s),
 		LintWorkflowTemplate:         NewLintWorkflowTemplateEndpoint(s),
 		SubmitWorkflowTemplate:       NewSubmitWorkflowTemplateEndpoint(s),
@@ -93,6 +103,11 @@ func (e *Endpoints) Use(m func(loom.Endpoint) loom.Endpoint) {
 	e.ListArchivedWorkflows = m(e.ListArchivedWorkflows)
 	e.GetArchivedWorkflow = m(e.GetArchivedWorkflow)
 	e.GetWorkflowArtifacts = m(e.GetWorkflowArtifacts)
+	e.ReadWorkflowArtifact = m(e.ReadWorkflowArtifact)
+	e.GetResourceSpec = m(e.GetResourceSpec)
+	e.GetWorkflowPodDiagnostics = m(e.GetWorkflowPodDiagnostics)
+	e.WaitWorkflow = m(e.WaitWorkflow)
+	e.GetServerContext = m(e.GetServerContext)
 	e.LintWorkflow = m(e.LintWorkflow)
 	e.LintWorkflowTemplate = m(e.LintWorkflowTemplate)
 	e.SubmitWorkflowTemplate = m(e.SubmitWorkflowTemplate)
@@ -261,6 +276,50 @@ func NewGetWorkflowArtifactsEndpoint(s Service) loom.Endpoint {
 	return func(ctx context.Context, req any) (any, error) {
 		p := req.(*GetWorkflowArtifactsPayload)
 		return s.GetWorkflowArtifacts(ctx, p)
+	}
+}
+
+// NewReadWorkflowArtifactEndpoint returns an endpoint function that calls the
+// method "ReadWorkflowArtifact" of service "argo".
+func NewReadWorkflowArtifactEndpoint(s Service) loom.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*ReadWorkflowArtifactPayload)
+		return s.ReadWorkflowArtifact(ctx, p)
+	}
+}
+
+// NewGetResourceSpecEndpoint returns an endpoint function that calls the
+// method "GetResourceSpec" of service "argo".
+func NewGetResourceSpecEndpoint(s Service) loom.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*GetResourceSpecPayload)
+		return s.GetResourceSpec(ctx, p)
+	}
+}
+
+// NewGetWorkflowPodDiagnosticsEndpoint returns an endpoint function that calls
+// the method "GetWorkflowPodDiagnostics" of service "argo".
+func NewGetWorkflowPodDiagnosticsEndpoint(s Service) loom.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*GetWorkflowPodDiagnosticsPayload)
+		return s.GetWorkflowPodDiagnostics(ctx, p)
+	}
+}
+
+// NewWaitWorkflowEndpoint returns an endpoint function that calls the method
+// "WaitWorkflow" of service "argo".
+func NewWaitWorkflowEndpoint(s Service) loom.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*WaitWorkflowPayload)
+		return s.WaitWorkflow(ctx, p)
+	}
+}
+
+// NewGetServerContextEndpoint returns an endpoint function that calls the
+// method "GetServerContext" of service "argo".
+func NewGetServerContextEndpoint(s Service) loom.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		return s.GetServerContext(ctx)
 	}
 }
 

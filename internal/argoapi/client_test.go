@@ -331,7 +331,7 @@ func TestWorkflowLogsDecodesSSEFrames(t *testing.T) {
 	}))
 	defer server.Close()
 	client := New(Config{BaseURL: server.URL})
-	entries, err := client.GetWorkflowLogs(context.Background(), "argo-ci", "build", "", "main")
+	entries, _, err := client.GetWorkflowLogs(context.Background(), "argo-ci", "build", "", "main", 1<<20)
 	if err != nil {
 		t.Fatalf("GetWorkflowLogs returned error: %v", err)
 	}
@@ -346,7 +346,7 @@ func TestWorkflowLogsReportsStreamError(t *testing.T) {
 	}))
 	defer server.Close()
 	client := New(Config{BaseURL: server.URL})
-	if _, err := client.GetWorkflowLogs(context.Background(), "argo-ci", "build", "", "main"); err == nil {
+	if _, _, err := client.GetWorkflowLogs(context.Background(), "argo-ci", "build", "", "main", 1<<20); err == nil {
 		t.Fatal("stream error must not look like empty logs")
 	}
 }
@@ -357,7 +357,7 @@ func TestWorkflowLogsReportsNullStreamError(t *testing.T) {
 	}))
 	defer server.Close()
 	client := New(Config{BaseURL: server.URL})
-	if _, err := client.GetWorkflowLogs(context.Background(), "argo-ci", "build", "", "main"); err == nil {
+	if _, _, err := client.GetWorkflowLogs(context.Background(), "argo-ci", "build", "", "main", 1<<20); err == nil {
 		t.Fatal("a present error key must fail even when its value is null")
 	}
 }
@@ -368,7 +368,7 @@ func TestWorkflowLogsFallsBackForEmptyOrNullResult(t *testing.T) {
 	}))
 	defer server.Close()
 	client := New(Config{BaseURL: server.URL})
-	entries, err := client.GetWorkflowLogs(context.Background(), "argo-ci", "build", "", "main")
+	entries, _, err := client.GetWorkflowLogs(context.Background(), "argo-ci", "build", "", "main", 1<<20)
 	if err != nil {
 		t.Fatalf("GetWorkflowLogs returned error: %v", err)
 	}
@@ -387,7 +387,7 @@ func TestWorkflowLogsDoNotMergeOuterFieldsIntoNonemptyResult(t *testing.T) {
 	}))
 	defer server.Close()
 	client := New(Config{BaseURL: server.URL})
-	entries, err := client.GetWorkflowLogs(context.Background(), "argo-ci", "build", "", "main")
+	entries, _, err := client.GetWorkflowLogs(context.Background(), "argo-ci", "build", "", "main", 1<<20)
 	if err != nil {
 		t.Fatalf("GetWorkflowLogs returned error: %v", err)
 	}
@@ -404,7 +404,7 @@ func TestWorkflowLogsRejectMalformedNestedResultStructures(t *testing.T) {
 			}))
 			defer server.Close()
 			client := New(Config{BaseURL: server.URL})
-			if _, err := client.GetWorkflowLogs(context.Background(), "argo-ci", "build", "", "main"); err == nil {
+			if _, _, err := client.GetWorkflowLogs(context.Background(), "argo-ci", "build", "", "main", 1<<20); err == nil {
 				t.Fatalf("malformed nested result %s used outer fallback", result)
 			}
 		})

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -10,9 +11,32 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	loom "github.com/CaliLuke/loom/pkg"
+
 	genargo "github.com/CaliLuke/go-argo-mcp/gen/argo"
 	"github.com/CaliLuke/go-argo-mcp/internal/argoapi"
 )
+
+func TestWorkflowDataReadsPreserveNamedLocalErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		service *ArgoService
+		payload *genargo.GetWorkflowNodesPayload
+		want    string
+	}{
+		{name: "configuration", service: NewArgoService(ArgoServiceConfig{}), payload: &genargo.GetWorkflowNodesPayload{Name: "build", Limit: 50}, want: "configuration_error"},
+		{name: "invalid path", service: NewArgoService(ArgoServiceConfig{Client: argoapi.New(argoapi.Config{BaseURL: "http://127.0.0.1"})}), payload: &genargo.GetWorkflowNodesPayload{Name: "bad/name", Limit: 50}, want: "invalid_input"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := tc.service.GetWorkflowNodes(context.Background(), tc.payload)
+			var named loom.LoomErrorNamer
+			if !errors.As(err, &named) || named.LoomErrorName() != tc.want {
+				t.Fatalf("expected %s, got %v", tc.want, err)
+			}
+		})
+	}
+}
 
 func TestWorkflowNodesFilterSortPageAndTruncate(t *testing.T) {
 	long := strings.Repeat("é", 3000)
@@ -56,6 +80,22 @@ func TestWorkflowNodeChildrenAreAlwaysNonNil(t *testing.T) {
 	}
 	if len(result.Nodes) != 1 || result.Nodes[0].Children == nil {
 		t.Fatalf("children must be nonnil: %#v", result)
+	}
+}
+
+func TestWorkflowNodesExposeBoundedParametersResultAndExitCode(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"metadata":{"name":"build"},"status":{"nodes":{"a":{"id":"a","name":"a","type":"Pod","inputs":{"parameters":[{"name":"commit","value":"abc"}]},"outputs":{"parameters":[{"name":"digest","value":"sha"}],"result":"done","exitCode":"0"}}}}}`))
+	}))
+	defer server.Close()
+
+	result, err := NewArgoService(ArgoServiceConfig{Client: argoapi.New(argoapi.Config{BaseURL: server.URL})}).GetWorkflowNodes(context.Background(), &genargo.GetWorkflowNodesPayload{Name: "build", Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	node := result.Nodes[0]
+	if node.InputParameters["commit"] != "abc" || node.OutputParameters["digest"] != "sha" || node.OutputResult == nil || *node.OutputResult != "done" || node.ExitCode == nil || *node.ExitCode != "0" {
+		t.Fatalf("unexpected node: %#v", node)
 	}
 }
 

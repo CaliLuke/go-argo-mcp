@@ -343,7 +343,7 @@ func TestGetWorkflowLogsExplainsEmptyArgoResponse(t *testing.T) {
 		DefaultNamespace: "argo-ci",
 	})
 
-	result, err := svc.GetWorkflowLogs(context.Background(), &genargo.GetWorkflowLogsPayload{WorkflowName: "build-123"})
+	result, err := svc.GetWorkflowLogs(context.Background(), &genargo.GetWorkflowLogsPayload{WorkflowName: "build-123", Source: "live"})
 	if err != nil {
 		t.Fatalf("GetWorkflowLogs returned error: %v", err)
 	}

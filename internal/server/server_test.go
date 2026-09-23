@@ -79,9 +79,11 @@ func TestTelemetryCleanupAfterAuditOpenFailure(t *testing.T) {
 
 func TestCleanupAfterListenFailure(t *testing.T) {
 	deps, telemetry, audit := lifecycleDeps(t)
-	deps.listen = func(string, string) (net.Listener, error) { return nil, errors.New("listen failed") }
-	err := runWithDependencies(context.Background(), Config{Transport: TransportHTTP, AuditEnabled: true}, deps)
-	if err == nil {
+	called := atomic.Bool{}
+	sentinel := errors.New("listen failed")
+	deps.listen = func(string, string) (net.Listener, error) { called.Store(true); return nil, sentinel }
+	err := runWithDependencies(context.Background(), Config{Transport: TransportHTTP, Addr: "127.0.0.1:8080", AuditEnabled: true}, deps)
+	if !errors.Is(err, sentinel) || !called.Load() {
 		t.Fatal("expected listen error")
 	}
 	assertCleanupOnce(t, telemetry, audit)
@@ -138,6 +140,7 @@ func TestHTTPShutdownTimeoutStillCleansUp(t *testing.T) {
 	go func() {
 		runDone <- runWithDependencies(ctx, Config{
 			Transport:       TransportHTTP,
+			Addr:            listener.Addr().String(),
 			AuditEnabled:    true,
 			ShutdownTimeout: 50 * time.Millisecond,
 		}, deps)

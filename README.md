@@ -92,6 +92,14 @@ go-argo-mcp
 
 The server listens on loopback by default. The MCP endpoint is `http://127.0.0.1:8080/rpc`; health is available at `http://127.0.0.1:8080/healthz`.
 
+For an authenticated listener, set a separate inbound token and configure the client to send it as a Bearer token:
+
+```bash
+export ARGO_MCP_AUTH_TOKEN='replace-with-a-random-secret'
+```
+
+`ARGO_MCP_AUTH_TOKEN` protects MCP clients connecting to `/rpc`. It is separate from `ARGO_TOKEN`, which the server sends only to the Argo API.
+
 Configure Codex with Streamable HTTP:
 
 ```bash
@@ -194,6 +202,10 @@ Configuration references: [Codex MCP commands](https://learn.chatgpt.com/docs/de
 | --- | --- | --- |
 | `ARGO_MCP_TRANSPORT` | `http` | `http`, `http-stateless`, or `stdio` |
 | `ARGO_MCP_ADDR` | `127.0.0.1:8080` | HTTP listen address; set explicitly to expose it beyond the local machine |
+| `ARGO_MCP_AUTH_TOKEN` | disabled | Bearer token required on every `/rpc` request when set |
+| `ARGO_MCP_ALLOW_UNAUTHENTICATED` | `false` | Explicitly acknowledge that a non-loopback listener is authenticated by a trusted proxy or mesh |
+| `ARGO_MCP_ALLOWED_HOSTS` | bind-derived | Comma-separated exact request authorities, each with an explicit port |
+| `ARGO_MCP_ALLOWED_ORIGINS` | none | Comma-separated exact HTTP(S) origins accepted in addition to the direct origin |
 | `ARGO_BASE_URL` | required | Argo Server API base URL |
 | `ARGO_NAMESPACE` | `default` | Namespace used when a tool omits one |
 | `ARGO_TOKEN` | empty | Bearer token; takes precedence over Basic auth |
@@ -235,7 +247,11 @@ Audit arguments redact keys containing `token`, `password`, or `secret`. Respons
 - With confirmation enabled, call `terminate_workflow` in dry-run mode first, inspect the preview, then repeat the exact action with its one-time token.
 - Use `MCP_NAMESPACES_ALLOW` in shared environments so agents cannot select an unintended namespace. Entries in `MCP_NAMESPACES_DENY` always take precedence.
 
-Do not expose the HTTP listener to an untrusted network. The server relies on its network boundary and Argo credentials; it does not add client authentication to `/rpc`.
+HTTP startup fails closed. A non-loopback bind requires `ARGO_MCP_AUTH_TOKEN` or the explicit `ARGO_MCP_ALLOW_UNAUTHENTICATED=true` acknowledgement for deployments where a trusted proxy or service mesh authenticates clients. Wildcard binds also require `ARGO_MCP_ALLOWED_HOSTS`.
+
+Host entries are exact authorities such as `mcp.internal.example:443`. Origin entries are exact origins such as `https://console.internal.example`; wildcards are rejected. The server validates the direct `Host` and ignores forwarded headers. An allowed cross-origin request still needs valid `/rpc` authentication. This origin setting validates MCP requests; configure CORS and preflight handling on the trusted proxy when a browser connects across origins.
+
+`/healthz` remains unauthenticated for probes and returns only `ok`. It does not expose configuration, Argo connectivity, namespaces, or credential state. Stdio opens no listener and ignores all HTTP-only security variables.
 
 ## Development
 

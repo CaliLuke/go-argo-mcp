@@ -4,7 +4,7 @@ Implement [issue #3](https://github.com/CaliLuke/go-argo-mcp/issues/3) through t
 
 ## Status
 
-- 2026-09-22 — Fresh Sol reviewer `review_code_3` approved the corrected implementation; parent `prek run --all-files`, `git diff --check`, and `actionlint` passed. Ready for commit/push.
+- 2026-09-22 — Fresh Sol reviewer `review_code_3` approved the corrected implementation; parent `prek run --all-files`, `git diff --check`, and `actionlint` passed. Committed and pushed as `c267514` with `Fixes #3`; GitHub issue closed and CI run `35813766039` succeeded.
 - 2026-09-22 — Draft for fresh review after issues 1 and 5.
 - 2026-09-22 — Fresh reviewer `review_plan_3` approved after lifecycle/test sequencing fixes; ready after dependencies land.
 - 2026-09-22 — Implementation completed and all named proof commands pass; awaiting fresh Sol code review. Configuration and lifecycle tests preceded their implementation, but transport dispatch/bootstrap was implemented before the required real-transport and safety-parity integration contracts were added. The deviation is recorded here rather than represented as fully test-first.
@@ -70,4 +70,4 @@ Checklist
 - [x] Extend transport SDK tests with safety, structured-result, error and audit parity assertions; use actual upstream call counters to prove denied calls never reach Argo. Run `go test ./internal/integration ./internal/server ./internal/mcpaudit`.
 - [x] Update README mode/env/deployment guidance, stdout behavior, graceful shutdown, stateless method restrictions and per-process confirmation limitation. Verify client configuration formats against official docs; for Codex follow openai-docs skill and local evidence first.
 - [ ] Run `make generate`, `go test ./...`, and `prek run --all-files`; return review evidence and accurate plan status to parent.
-- [ ] Resolve fresh Sol review findings and rerun affected checks. Parent commits with `Fixes #3` and pushes only after approval.
+- [x] Resolve fresh Sol review findings and rerun affected checks. Parent commits with `Fixes #3` and pushes only after approval.

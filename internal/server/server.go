@@ -8,6 +8,8 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -82,6 +84,20 @@ func newApplication(ctx context.Context, cfg Config, deps dependencies) (*Applic
 	if cfg.Transport == TransportStdio && cfg.AuditEnabled && isStdoutPath(cfg.AuditFile) {
 		return nil, fmt.Errorf("MCP audit destination %q resolves to stdout", cfg.AuditFile)
 	}
+	var security *httpSecurityPolicy
+	if cfg.Transport != TransportStdio {
+		var err error
+		security, err = buildHTTPSecurityPolicy(cfg)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if cfg.ArgoBaseURL != "" {
+		parsed, err := url.Parse(cfg.ArgoBaseURL)
+		if err != nil || parsed.User != nil || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" || strings.Contains(cfg.ArgoBaseURL, "#") {
+			return nil, fmt.Errorf("invalid ARGO_BASE_URL")
+		}
+	}
 	runtime, err := deps.startTelemetry(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("start otel runtime: %w", err)
@@ -138,8 +154,12 @@ func newApplication(ctx context.Context, cfg Config, deps dependencies) (*Applic
 		adapterOptions.ToolCallInterceptors = append(adapterOptions.ToolCallInterceptors, audit.Interceptor())
 	}
 	serverOptions := &mcpargo.SDKServerOptions{Adapter: adapterOptions}
-	if cfg.Transport == TransportHTTPStateless {
-		serverOptions.StreamableHTTP = &sdkbridge.StreamableHTTPOptions{Stateless: true}
+	if cfg.Transport != TransportStdio {
+		serverOptions.StreamableHTTP = &sdkbridge.StreamableHTTPOptions{
+			Stateless:                  cfg.Transport == TransportHTTPStateless,
+			DisableLocalhostProtection: true,
+		}
+		serverOptions.OriginProtection = &sdkbridge.OriginProtection{TrustedOrigins: security.origins}
 	}
 	sdk, err := deps.newSDKServer(svc, serverOptions)
 	if err != nil {
@@ -147,13 +167,17 @@ func newApplication(ctx context.Context, cfg Config, deps dependencies) (*Applic
 	}
 	app.sdk = sdk
 	mux := http.NewServeMux()
-	mux.Handle("/rpc", sdk.Handler)
+	rpcHandler := sdk.Handler
+	if security != nil {
+		rpcHandler = security.middleware(rpcHandler)
+	}
+	mux.Handle("/rpc", rpcHandler)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
 	metricMode := observability.ConfigFromEnv(genargo.ServiceName, cfg.Version).MetricMode
-	app.handler = runtime.HTTPMiddleware(genargo.ServiceName, metricMode)(requestLoggingMiddleware(runtime, mux))
+	app.handler = instrumentedHTTPHandler(runtime, metricMode, mux)
 	return app, nil
 }
 
@@ -256,11 +280,56 @@ func requestLoggingMiddleware(runtime telemetryRuntime, next http.Handler) http.
 	})
 }
 
+func instrumentedHTTPHandler(runtime telemetryRuntime, metricMode loomotel.HTTPMetricMode, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		terminal := http.HandlerFunc(func(w http.ResponseWriter, observedRequest *http.Request) {
+			next.ServeHTTP(w, r.Clone(observedRequest.Context()))
+		})
+		observed := runtime.HTTPMiddleware(genargo.ServiceName, metricMode)(requestLoggingMiddleware(runtime, terminal))
+		clone := r.Clone(r.Context())
+		urlCopy := *r.URL
+		urlCopy.RawQuery, urlCopy.ForceQuery = "", false
+		urlCopy.Host = "mcp.invalid"
+		if r.TLS != nil {
+			urlCopy.Scheme = "https"
+		} else {
+			urlCopy.Scheme = "http"
+		}
+		if urlCopy.Path != "/rpc" && urlCopy.Path != "/healthz" {
+			urlCopy.Path = "/unmatched"
+		}
+		clone.URL = &urlCopy
+		clone.Host = "mcp.invalid"
+		clone.RemoteAddr = "0.0.0.0:0"
+		clone.Header = make(http.Header)
+		clone.Method = safeHTTPMethod(r.Method)
+		if r.TLS != nil {
+			tlsState := *r.TLS
+			tlsState.ServerName = ""
+			clone.TLS = &tlsState
+		}
+		clone.RequestURI = urlCopy.Path
+		observed.ServeHTTP(w, clone)
+	})
+}
+
+func safeHTTPMethod(method string) string {
+	switch method {
+	case http.MethodConnect, http.MethodDelete, http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodPatch, http.MethodPost, http.MethodPut, http.MethodTrace:
+		return method
+	default:
+		return "OTHER"
+	}
+}
+
 func routeName(r *http.Request) string {
 	if r.Pattern != "" {
 		return r.Pattern
 	}
-	return r.URL.Path
+	if r.URL.Path == "/rpc" || r.URL.Path == "/healthz" {
+		return r.URL.Path
+	}
+	return "unmatched"
 }
 
 func newArgoBaseHTTPClient(cfg Config) *http.Client {
@@ -275,5 +344,7 @@ func newArgoBaseHTTPClient(cfg Config) *http.Client {
 			ServerName:         cfg.ArgoTLSServerName,
 		}
 	}
-	return &http.Client{Transport: transport}
+	return &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
 }

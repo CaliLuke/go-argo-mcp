@@ -28,8 +28,7 @@ func TestHTTPTransportsUseProductionBootstrap(t *testing.T) {
 	defer argo.Close()
 	for _, mode := range []appserver.Transport{appserver.TransportHTTP, appserver.TransportHTTPStateless} {
 		t.Run(string(mode), func(t *testing.T) {
-			app := newTestApplication(t, mode, argo.URL)
-			httpServer := httptest.NewServer(app.Handler())
+			app, httpServer := newTestApplication(t, mode, argo.URL)
 			defer httpServer.Close()
 			defer closeApplication(t, app)
 
@@ -52,9 +51,8 @@ func TestHTTPTransportsUseProductionBootstrap(t *testing.T) {
 func TestStatelessMethodAndSessionPolicy(t *testing.T) {
 	argo := httptest.NewServer(http.HandlerFunc(simulatedArgo))
 	defer argo.Close()
-	app := newTestApplication(t, appserver.TransportHTTPStateless, argo.URL)
+	app, httpServer := newTestApplication(t, appserver.TransportHTTPStateless, argo.URL)
 	defer closeApplication(t, app)
-	httpServer := httptest.NewServer(app.Handler())
 	defer httpServer.Close()
 
 	for _, method := range []string{http.MethodGet, http.MethodDelete} {
@@ -413,8 +411,7 @@ func defaultPolicySession(t *testing.T, mode appserver.Transport, argoURL string
 			}
 		}
 	}
-	app := newTestApplication(t, mode, argoURL)
-	httpServer := httptest.NewServer(app.Handler())
+	app, httpServer := newTestApplication(t, mode, argoURL)
 	session := connectHTTP(t, httpServer.URL+"/rpc")
 	return session, func() {
 		_ = session.Close()
@@ -446,8 +443,10 @@ func safetySession(t *testing.T, mode appserver.Transport, argoURL string) (*mcp
 			return data
 		}
 	}
+	httpServer := httptest.NewUnstartedServer(nil)
 	app, err := appserver.New(testContext(t), appserver.Config{
 		Transport:           mode,
+		Addr:                httpServer.Listener.Addr().String(),
 		ArgoBaseURL:         argoURL,
 		ArgoRequestTimeout:  5 * time.Second,
 		DefaultNamespace:    "argo-ci",
@@ -461,7 +460,8 @@ func safetySession(t *testing.T, mode appserver.Transport, argoURL string) (*mcp
 	if err != nil {
 		t.Fatal(err)
 	}
-	httpServer := httptest.NewServer(app.Handler())
+	httpServer.Config.Handler = app.Handler()
+	httpServer.Start()
 	session := connectHTTP(t, httpServer.URL+"/rpc")
 	return session, func() []byte {
 		_ = session.Close()
@@ -513,10 +513,12 @@ func textResult(result *mcp.CallToolResult) string {
 	return ""
 }
 
-func newTestApplication(t *testing.T, mode appserver.Transport, argoURL string) *appserver.Application {
+func newTestApplication(t *testing.T, mode appserver.Transport, argoURL string) (*appserver.Application, *httptest.Server) {
 	t.Helper()
+	httpServer := httptest.NewUnstartedServer(nil)
 	app, err := appserver.New(testContext(t), appserver.Config{
 		Transport:           mode,
+		Addr:                httpServer.Listener.Addr().String(),
 		ArgoBaseURL:         argoURL,
 		ArgoRequestTimeout:  5 * time.Second,
 		DefaultNamespace:    "argo-ci",
@@ -526,9 +528,12 @@ func newTestApplication(t *testing.T, mode appserver.Transport, argoURL string) 
 		AuditFile:           filepath.Join(t.TempDir(), "audit.jsonl"),
 	})
 	if err != nil {
+		httpServer.Close()
 		t.Fatalf("server.New: %v", err)
 	}
-	return app
+	httpServer.Config.Handler = app.Handler()
+	httpServer.Start()
+	return app, httpServer
 }
 
 func closeApplication(t *testing.T, app *appserver.Application) {

@@ -8,8 +8,14 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 	"time"
+
+	loomotel "github.com/CaliLuke/loom/observability/otel"
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 func TestClientUsesBearerAuthentication(t *testing.T) {
@@ -40,6 +46,73 @@ func TestClientUsesBasicAuthentication(t *testing.T) {
 	client := New(Config{BaseURL: server.URL, Username: "argo-user", Password: "argo-pass"})
 	if _, err := client.ListWorkflows(context.Background(), "default", "", 50, ""); err != nil {
 		t.Fatalf("ListWorkflows returned error: %v", err)
+	}
+}
+
+func TestClientDoesNotFollowRedirectsWithCredentials(t *testing.T) {
+	const sentinel = "redirect-credential-secret"
+	var targetCalls int
+	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { targetCalls++ }))
+	defer target.Close()
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Redirect(w, &http.Request{}, target.URL, http.StatusTemporaryRedirect)
+	}))
+	defer source.Close()
+	client := New(Config{BaseURL: source.URL, Token: sentinel})
+	_, err := client.ListWorkflows(context.Background(), "default", "", 50, "")
+	if err == nil {
+		t.Fatal("redirect returned success")
+	}
+	if targetCalls != 0 {
+		t.Fatal("credential-bearing request followed redirect")
+	}
+	if strings.Contains(err.Error(), sentinel) {
+		t.Fatal("redirect error leaked credential")
+	}
+}
+
+func TestRedirectCredentialIsAbsentFromActualExportedTelemetry(t *testing.T) {
+	const sentinel = "outbound-redirect-telemetry-secret"
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(provider)
+	t.Cleanup(func() { otel.SetTracerProvider(previous); _ = provider.Shutdown(context.Background()) })
+	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("redirect target called") }))
+	defer target.Close()
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Location", target.URL)
+		w.WriteHeader(http.StatusTemporaryRedirect)
+	}))
+	defer source.Close()
+	wrapped := loomotel.WrapHTTPClient(&http.Client{}, loomotel.HTTPClientConfig{ServiceName: "argo-api", MetricMode: loomotel.HTTPMetricModeOTelOnly})
+	client := New(Config{BaseURL: source.URL, Token: sentinel, HTTPClient: wrapped})
+	if _, err := client.ListWorkflows(context.Background(), "default", "", 50, ""); err == nil {
+		t.Fatal("redirect returned success")
+	}
+	spans := recorder.Ended()
+	if len(spans) == 0 {
+		t.Fatal("wrapped outbound client exported no spans")
+	}
+	for _, span := range spans {
+		if strings.Contains(span.Name(), sentinel) {
+			t.Fatalf("span name leaked credential: %q", span.Name())
+		}
+		for _, attr := range span.Attributes() {
+			if strings.Contains(attr.Value.String(), sentinel) {
+				t.Fatalf("span attribute %s leaked credential", attr.Key)
+			}
+		}
+		for _, event := range span.Events() {
+			if strings.Contains(event.Name, sentinel) {
+				t.Fatalf("span event leaked credential")
+			}
+			for _, attr := range event.Attributes {
+				if strings.Contains(attr.Value.String(), sentinel) {
+					t.Fatalf("event attribute leaked credential")
+				}
+			}
+		}
 	}
 }
 

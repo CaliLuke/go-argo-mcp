@@ -23,11 +23,11 @@ func TestConfigTransportDefaultsAndValidation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg, err := ConfigFromLookup(func(key string) string {
+			cfg, err := ConfigFromLookup(func(key string) (string, bool) {
 				if key == "ARGO_MCP_TRANSPORT" {
-					return tt.value
+					return tt.value, tt.name != "unset"
 				}
-				return ""
+				return "", false
 			})
 			if (err != nil) != tt.wantError {
 				t.Fatalf("ConfigFromLookup error = %v, wantError %t", err, tt.wantError)
@@ -40,7 +40,7 @@ func TestConfigTransportDefaultsAndValidation(t *testing.T) {
 }
 
 func TestConfigDefaults(t *testing.T) {
-	cfg, err := ConfigFromLookup(func(string) string { return "" })
+	cfg, err := ConfigFromLookup(func(string) (string, bool) { return "", false })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,14 +66,14 @@ func TestStatelessRejectsSessionCompatibilityFlagConfig(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := ConfigFromLookup(func(key string) string {
+			_, err := ConfigFromLookup(func(key string) (string, bool) {
 				switch key {
 				case "ARGO_MCP_TRANSPORT":
-					return "http-stateless"
+					return "http-stateless", true
 				case "MCPGODEBUG":
-					return tt.value
+					return tt.value, true
 				default:
-					return ""
+					return "", false
 				}
 			})
 			if (err != nil) != tt.wantError {
@@ -93,14 +93,14 @@ func TestStdioRejectsStdoutAudit(t *testing.T) {
 	}
 	for _, path := range paths {
 		t.Run(path, func(t *testing.T) {
-			if _, err := ConfigFromLookup(func(key string) string {
+			if _, err := ConfigFromLookup(func(key string) (string, bool) {
 				switch key {
 				case "ARGO_MCP_TRANSPORT":
-					return "stdio"
+					return "stdio", true
 				case "MCP_AUDIT_FILE":
-					return path
+					return path, true
 				default:
-					return ""
+					return "", false
 				}
 			}); err == nil && path != procPath && path != "/proc/self/fd/1" {
 				t.Fatalf("expected stdout audit rejection for %q", path)

@@ -147,6 +147,7 @@ func New(config Config) *Client {
 		clientCopy.Transport = cloned
 	}
 	clientCopy.Timeout = timeout
+	clientCopy.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	return &Client{
 		baseURL:  strings.TrimRight(config.BaseURL, "/"),
 		http:     &clientCopy,

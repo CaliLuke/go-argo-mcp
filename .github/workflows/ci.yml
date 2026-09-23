@@ -31,8 +31,9 @@ jobs:
           uv tool install prek==0.2.2
       - name: Generate
         run: |
-          loom gen github.com/CaliLuke/go-argo-mcp/design
+          make generate
           git diff --exit-code
+          test -z "$(git ls-files --others --exclude-standard -- gen internal/argoapi/models)"
       - name: Quality gates
         run: |
           actionlint

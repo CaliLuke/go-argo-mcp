@@ -9,10 +9,13 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/robfig/cron/v3"
+
+	"github.com/CaliLuke/go-argo-mcp/internal/argoapi/models"
 )
 
 type Config struct {
@@ -163,12 +166,13 @@ func (c *Client) listWorkflows(ctx context.Context, namespace, status string, li
 			pageSize = 100
 		}
 		query["listOptions.limit"] = intString(pageSize)
-		resp, err := c.doJSON(ctx, http.MethodGet, endpoint, query, nil)
+		var resp models.WorkflowList
+		err := c.doJSON(ctx, http.MethodGet, endpoint, query, nil, &resp)
 		if err != nil {
 			return nil, err
 		}
-		for _, item := range jsonItems(resp) {
-			summary := workflowSummaryFromObject(item)
+		for _, item := range resp.Items {
+			summary := workflowSummaryFromModel(item)
 			if summary.Name == "" || status != "" && !strings.EqualFold(summary.Status, status) {
 				continue
 			}
@@ -177,7 +181,7 @@ func (c *Client) listWorkflows(ctx context.Context, namespace, status string, li
 				return workflows, nil
 			}
 		}
-		cursor := stringValue(objectValue(resp, "metadata"), "continue")
+		cursor := resp.Metadata.Continue
 		if cursor == "" {
 			return workflows, nil
 		}
@@ -191,23 +195,22 @@ func (c *Client) listWorkflows(ctx context.Context, namespace, status string, li
 
 func (c *Client) GetWorkflow(ctx context.Context, namespace, name string) (*WorkflowDetail, error) {
 	endpoint := c.baseURL + "/api/v1/workflows/" + url.PathEscape(namespace) + "/" + url.PathEscape(name)
-	resp, err := c.doJSON(ctx, http.MethodGet, endpoint, nil, nil)
+	var resp models.Workflow
+	err := c.doJSON(ctx, http.MethodGet, endpoint, nil, nil, &resp)
 	if err != nil {
 		return nil, err
 	}
-	summary := workflowSummaryFromObject(resp)
+	summary := workflowSummaryFromModel(resp)
 	if summary.Name == "" {
 		return nil, fmt.Errorf("workflow metadata missing name for %s/%s", namespace, name)
 	}
-	status := objectValue(resp, "status")
-	metadata := objectValue(resp, "metadata")
 	return &WorkflowDetail{
 		Summary:     summary,
-		Message:     stringValue(status, "message"),
-		Labels:      stringMap(metadata, "labels"),
-		Annotations: stringMap(metadata, "annotations"),
-		Parameters:  extractParameters(resp, "spec", "arguments"),
-		Outputs:     extractParameters(resp, "status", "outputs"),
+		Message:     resp.Status.Message,
+		Labels:      nonnilStringMap(resp.Metadata.Labels),
+		Annotations: nonnilStringMap(resp.Metadata.Annotations),
+		Parameters:  renderParameters(resp.Spec.Arguments.Parameters),
+		Outputs:     renderParameters(resp.Status.Outputs.Parameters),
 	}, nil
 }
 
@@ -230,65 +233,59 @@ func (c *Client) GetWorkflowLogs(ctx context.Context, namespace, workflowName, p
 			continue
 		}
 		line = strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-		var payload map[string]any
+		var payload logEnvelope
 		if err := json.Unmarshal([]byte(line), &payload); err != nil {
 			return nil, fmt.Errorf("decode Argo log stream frame: %w", err)
 		}
-		if _, failed := payload["error"]; failed {
+		if len(payload.Error) != 0 {
 			return nil, fmt.Errorf("argo log stream returned an error")
 		}
-		result := objectValue(payload, "result")
-		if len(result) == 0 {
-			result = payload
+		result := logResult{PodName: payload.PodName, Content: payload.Content}
+		if !emptyJSONValue(payload.Result) {
+			if err := json.Unmarshal(payload.Result, &result); err != nil {
+				return nil, fmt.Errorf("decode Argo log stream result: %w", err)
+			}
 		}
-		content := stringValue(result, "content")
-		if content == "" {
+		if result.Content == "" {
 			continue
 		}
-		entries = append(entries, WorkflowLogEntry{
-			PodName: stringValue(result, "podName"),
-			Content: content,
-		})
+		entries = append(entries, WorkflowLogEntry(result))
 	}
 	return entries, nil
 }
 
 func (c *Client) RetryWorkflow(ctx context.Context, namespace, name string, restartSuccessful bool) error {
 	endpoint := c.baseURL + "/api/v1/workflows/" + url.PathEscape(namespace) + "/" + url.PathEscape(name) + "/retry"
-	body := map[string]any{
-		"name":              name,
-		"namespace":         namespace,
-		"restartSuccessful": restartSuccessful,
+	body := models.WorkflowRetryRequest{
+		Name:              name,
+		Namespace:         namespace,
+		RestartSuccessful: restartSuccessful,
 	}
-	_, err := c.doJSON(ctx, http.MethodPut, endpoint, nil, body)
-	return err
+	return c.doJSON(ctx, http.MethodPut, endpoint, nil, body, nil)
 }
 
 func (c *Client) TerminateWorkflow(ctx context.Context, namespace, name string) error {
 	endpoint := c.baseURL + "/api/v1/workflows/" + url.PathEscape(namespace) + "/" + url.PathEscape(name) + "/terminate"
-	_, err := c.doJSON(ctx, http.MethodPut, endpoint, nil, map[string]any{
-		"name":      name,
-		"namespace": namespace,
-	})
-	return err
+	body := models.WorkflowTerminateRequest{Name: name, Namespace: namespace}
+	return c.doJSON(ctx, http.MethodPut, endpoint, nil, body, nil)
 }
 
 func (c *Client) ListCronWorkflows(ctx context.Context, namespace string, suspended *bool) ([]CronWorkflowSummary, error) {
 	endpoint := c.baseURL + "/api/v1/cron-workflows/" + url.PathEscape(namespace)
-	resp, err := c.doJSON(ctx, http.MethodGet, endpoint, nil, nil)
+	var resp models.CronWorkflowList
+	err := c.doJSON(ctx, http.MethodGet, endpoint, nil, nil, &resp)
 	if err != nil {
 		return nil, err
 	}
-	items := jsonItems(resp)
-	results := make([]CronWorkflowSummary, 0, len(items))
-	for _, item := range items {
+	results := make([]CronWorkflowSummary, 0, len(resp.Items))
+	for _, item := range resp.Items {
 		summary := CronWorkflowSummary{
-			Name:      stringValue(objectValue(item, "metadata"), "name"),
-			Namespace: coalesce(stringValue(objectValue(item, "metadata"), "namespace"), namespace),
-			Schedule:  cronSchedule(objectValue(item, "spec")),
-			Schedules: cronSchedules(objectValue(item, "spec")),
-			Timezone:  stringValue(objectValue(item, "spec"), "timezone"),
-			Suspended: boolValue(objectValue(item, "spec"), "suspend"),
+			Name:      item.Metadata.Name,
+			Namespace: coalesce(item.Metadata.Namespace, namespace),
+			Schedule:  cronSchedule(item.Spec),
+			Schedules: cronSchedules(item.Spec),
+			Timezone:  item.Spec.Timezone,
+			Suspended: item.Spec.Suspend,
 		}
 		if summary.Name == "" {
 			continue
@@ -303,32 +300,31 @@ func (c *Client) ListCronWorkflows(ctx context.Context, namespace string, suspen
 
 func (c *Client) GetCronWorkflow(ctx context.Context, namespace, name string) (*CronWorkflowDetail, error) {
 	endpoint := c.baseURL + "/api/v1/cron-workflows/" + url.PathEscape(namespace) + "/" + url.PathEscape(name)
-	resp, err := c.doJSON(ctx, http.MethodGet, endpoint, nil, nil)
+	var resp models.CronWorkflow
+	err := c.doJSON(ctx, http.MethodGet, endpoint, nil, nil, &resp)
 	if err != nil {
 		return nil, err
 	}
-	spec := objectValue(resp, "spec")
-	status := objectValue(resp, "status")
-	schedules := cronSchedules(spec)
-	timezone := stringValue(spec, "timezone")
-	suspended := boolValue(spec, "suspend")
+	schedules := cronSchedules(resp.Spec)
+	timezone := resp.Spec.Timezone
+	suspended := resp.Spec.Suspend
 	nextScheduledTime := ""
 	if !suspended {
-		nextScheduledTime = stringValue(status, "nextScheduledTime")
+		nextScheduledTime = resp.Status.NextScheduledTime
 		if nextScheduledTime == "" {
 			nextScheduledTime = nextCronRun(schedules, timezone, time.Now())
 		}
 	}
 	return &CronWorkflowDetail{
 		CronWorkflowSummary: CronWorkflowSummary{
-			Name:      stringValue(objectValue(resp, "metadata"), "name"),
-			Namespace: coalesce(stringValue(objectValue(resp, "metadata"), "namespace"), namespace),
-			Schedule:  cronSchedule(spec),
+			Name:      resp.Metadata.Name,
+			Namespace: coalesce(resp.Metadata.Namespace, namespace),
+			Schedule:  cronSchedule(resp.Spec),
 			Schedules: schedules,
 			Timezone:  timezone,
 			Suspended: suspended,
 		},
-		LastScheduledTime: stringValue(status, "lastScheduledTime"),
+		LastScheduledTime: resp.Status.LastScheduledTime,
 		NextScheduledTime: nextScheduledTime,
 	}, nil
 }
@@ -339,11 +335,12 @@ func (c *Client) ToggleCronSuspension(ctx context.Context, namespace, name strin
 		action = "suspend"
 	}
 	endpoint := c.baseURL + "/api/v1/cron-workflows/" + url.PathEscape(namespace) + "/" + url.PathEscape(name) + "/" + action
-	_, err := c.doJSON(ctx, http.MethodPut, endpoint, nil, map[string]any{
-		"name":      name,
-		"namespace": namespace,
-	})
-	return err
+	if suspend {
+		body := models.CronWorkflowSuspendRequest{Name: name, Namespace: namespace}
+		return c.doJSON(ctx, http.MethodPut, endpoint, nil, body, nil)
+	}
+	body := models.CronWorkflowResumeRequest{Name: name, Namespace: namespace}
+	return c.doJSON(ctx, http.MethodPut, endpoint, nil, body, nil)
 }
 
 func (c *Client) GetCronHistory(ctx context.Context, namespace, name string, limit int) ([]WorkflowSummary, error) {
@@ -367,28 +364,29 @@ func (c *Client) ListWorkflowTemplates(ctx context.Context, namespace, labelSele
 	if labelSelector != "" {
 		query["listOptions.labelSelector"] = labelSelector
 	}
-	resp, err := c.doJSON(ctx, http.MethodGet, endpoint, query, nil)
+	var resp models.WorkflowTemplateList
+	err := c.doJSON(ctx, http.MethodGet, endpoint, query, nil, &resp)
 	if err != nil {
 		return nil, err
 	}
-	items := jsonItems(resp)
-	results := make([]TemplateSummary, 0, len(items))
-	for _, item := range items {
-		results = append(results, templateSummaryFromObject(item, namespace))
+	results := make([]TemplateSummary, 0, len(resp.Items))
+	for _, item := range resp.Items {
+		results = append(results, templateSummaryFromModel(item.Metadata, item.Spec, namespace))
 	}
 	return compactTemplateSummaries(results), nil
 }
 
 func (c *Client) GetWorkflowTemplate(ctx context.Context, namespace, name string) (*TemplateDetail, error) {
 	endpoint := c.baseURL + "/api/v1/workflow-templates/" + url.PathEscape(namespace) + "/" + url.PathEscape(name)
-	resp, err := c.doJSON(ctx, http.MethodGet, endpoint, nil, nil)
+	var resp models.WorkflowTemplate
+	err := c.doJSON(ctx, http.MethodGet, endpoint, nil, nil, &resp)
 	if err != nil {
 		return nil, err
 	}
-	summary := templateSummaryFromObject(resp, namespace)
+	summary := templateSummaryFromModel(resp.Metadata, resp.Spec, namespace)
 	return &TemplateDetail{
 		TemplateSummary: summary,
-		TemplateNames:   templateNames(resp),
+		TemplateNames:   templateNames(resp.Spec),
 	}, nil
 }
 
@@ -398,20 +396,20 @@ func (c *Client) ListClusterWorkflowTemplates(ctx context.Context, labelSelector
 	if labelSelector != "" {
 		query["listOptions.labelSelector"] = labelSelector
 	}
-	resp, err := c.doJSON(ctx, http.MethodGet, endpoint, query, nil)
+	var resp models.ClusterWorkflowTemplateList
+	err := c.doJSON(ctx, http.MethodGet, endpoint, query, nil, &resp)
 	if err != nil {
 		return nil, err
 	}
-	items := jsonItems(resp)
-	results := make([]ClusterTemplateSummary, 0, len(items))
-	for _, item := range items {
-		name := stringValue(objectValue(item, "metadata"), "name")
+	results := make([]ClusterTemplateSummary, 0, len(resp.Items))
+	for _, item := range resp.Items {
+		name := item.Metadata.Name
 		if name == "" {
 			continue
 		}
 		results = append(results, ClusterTemplateSummary{
 			Name:       name,
-			Entrypoint: stringValue(objectValue(item, "spec"), "entrypoint"),
+			Entrypoint: item.Spec.Entrypoint,
 		})
 	}
 	return results, nil
@@ -419,37 +417,41 @@ func (c *Client) ListClusterWorkflowTemplates(ctx context.Context, labelSelector
 
 func (c *Client) GetClusterWorkflowTemplate(ctx context.Context, name string) (*ClusterTemplateDetail, error) {
 	endpoint := c.baseURL + "/api/v1/cluster-workflow-templates/" + url.PathEscape(name)
-	resp, err := c.doJSON(ctx, http.MethodGet, endpoint, nil, nil)
+	var resp models.ClusterWorkflowTemplate
+	err := c.doJSON(ctx, http.MethodGet, endpoint, nil, nil, &resp)
 	if err != nil {
 		return nil, err
 	}
 	return &ClusterTemplateDetail{
 		ClusterTemplateSummary: ClusterTemplateSummary{
-			Name:       stringValue(objectValue(resp, "metadata"), "name"),
-			Entrypoint: stringValue(objectValue(resp, "spec"), "entrypoint"),
+			Name:       resp.Metadata.Name,
+			Entrypoint: resp.Spec.Entrypoint,
 		},
-		TemplateNames: templateNames(resp),
+		TemplateNames: templateNames(resp.Spec),
 	}, nil
 }
 
-func (c *Client) doJSON(ctx context.Context, method, endpoint string, query map[string]string, body any) (map[string]any, error) {
+func (c *Client) doJSON(ctx context.Context, method, endpoint string, query map[string]string, body, destination any) error {
 	req, err := c.newRequest(ctx, method, endpoint, query, body)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("%s %s: %w", method, endpoint, err)
+		return fmt.Errorf("%s %s: %w", method, endpoint, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, &HTTPError{StatusCode: resp.StatusCode, Endpoint: endpoint}
+		return &HTTPError{StatusCode: resp.StatusCode, Endpoint: endpoint}
 	}
-	var payload map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return nil, fmt.Errorf("decode json from %s: %w", endpoint, err)
+	if destination == nil {
+		var discarded json.RawMessage
+		destination = &discarded
 	}
-	return payload, nil
+	if err := json.NewDecoder(resp.Body).Decode(destination); err != nil {
+		return fmt.Errorf("decode json from %s: %w", endpoint, err)
+	}
+	return nil
 }
 
 func (c *Client) doText(ctx context.Context, method, endpoint string, query map[string]string, body any) (string, error) {
@@ -517,26 +519,22 @@ func (c *Client) newRequest(ctx context.Context, method, endpoint string, query 
 	return req, nil
 }
 
-func workflowSummaryFromObject(item map[string]any) WorkflowSummary {
-	metadata := objectValue(item, "metadata")
-	status := objectValue(item, "status")
+func workflowSummaryFromModel(item models.Workflow) WorkflowSummary {
 	return WorkflowSummary{
-		Name:       stringValue(metadata, "name"),
-		Namespace:  stringValue(metadata, "namespace"),
-		Status:     coalesce(stringValue(status, "phase"), "Unknown"),
-		Progress:   stringValue(status, "progress"),
-		StartedAt:  stringValue(status, "startedAt"),
-		FinishedAt: stringValue(status, "finishedAt"),
+		Name:       item.Metadata.Name,
+		Namespace:  item.Metadata.Namespace,
+		Status:     coalesce(item.Status.Phase, "Unknown"),
+		Progress:   item.Status.Progress,
+		StartedAt:  item.Status.StartedAt,
+		FinishedAt: item.Status.FinishedAt,
 	}
 }
 
-func templateSummaryFromObject(item map[string]any, namespace string) TemplateSummary {
-	metadata := objectValue(item, "metadata")
-	spec := objectValue(item, "spec")
+func templateSummaryFromModel(metadata models.ObjectMeta, spec models.WorkflowSpec, namespace string) TemplateSummary {
 	return TemplateSummary{
-		Name:       stringValue(metadata, "name"),
-		Namespace:  coalesce(stringValue(metadata, "namespace"), namespace),
-		Entrypoint: stringValue(spec, "entrypoint"),
+		Name:       metadata.Name,
+		Namespace:  coalesce(metadata.Namespace, namespace),
+		Entrypoint: spec.Entrypoint,
 	}
 }
 
@@ -550,39 +548,32 @@ func compactTemplateSummaries(input []TemplateSummary) []TemplateSummary {
 	return out
 }
 
-func templateNames(item map[string]any) []string {
-	spec := objectValue(item, "spec")
-	raw := anySlice(spec["templates"])
-	names := make([]string, 0, len(raw))
-	for _, entry := range raw {
-		obj, ok := entry.(map[string]any)
-		if !ok {
-			continue
-		}
-		if name := stringValue(obj, "name"); name != "" {
-			names = append(names, name)
+func templateNames(spec models.WorkflowSpec) []string {
+	names := make([]string, 0, len(spec.Templates))
+	for _, template := range spec.Templates {
+		if template.Name != "" {
+			names = append(names, template.Name)
 		}
 	}
 	return names
 }
 
-func cronSchedules(spec map[string]any) []string {
-	raw := anySlice(spec["schedules"])
-	schedules := make([]string, 0, len(raw))
-	for _, value := range raw {
-		if schedule, ok := value.(string); ok && schedule != "" {
+func cronSchedules(spec models.CronWorkflowSpec) []string {
+	schedules := make([]string, 0, len(spec.Schedules))
+	for _, schedule := range spec.Schedules {
+		if schedule != "" {
 			schedules = append(schedules, schedule)
 		}
 	}
 	if len(schedules) == 0 {
-		if schedule := stringValue(spec, "schedule"); schedule != "" {
-			return []string{schedule}
+		if spec.Schedule != "" {
+			return []string{spec.Schedule}
 		}
 	}
 	return schedules
 }
 
-func cronSchedule(spec map[string]any) string {
+func cronSchedule(spec models.CronWorkflowSpec) string {
 	if schedules := cronSchedules(spec); len(schedules) > 0 {
 		return schedules[0]
 	}
@@ -610,107 +601,81 @@ func nextCronRun(schedules []string, timezone string, now time.Time) string {
 	return next.UTC().Format(time.RFC3339)
 }
 
-func extractParameters(item map[string]any, parentKey, argumentsKey string) map[string]string {
-	parent := objectValue(item, parentKey)
-	args := objectValue(parent, argumentsKey)
-	params := anySlice(args["parameters"])
-	out := make(map[string]string, len(params))
-	for _, entry := range params {
-		obj, ok := entry.(map[string]any)
-		if !ok {
+func renderParameters(parameters []models.Parameter) map[string]string {
+	out := make(map[string]string, len(parameters))
+	for _, parameter := range parameters {
+		if parameter.Name == "" {
 			continue
 		}
-		name := stringValue(obj, "name")
-		if name == "" {
-			continue
-		}
-		out[name] = coalesce(
-			stringValue(obj, "value"),
-			stringValue(obj, "default"),
-			stringJSONValue(obj["valueFrom"]),
+		out[parameter.Name] = coalesce(
+			renderParameterJSON(parameter.Value),
+			renderParameterJSON(parameter.Default),
+			renderParameterJSON(parameter.ValueFrom),
 		)
 	}
 	return out
 }
 
-func stringMap(item map[string]any, key string) map[string]string {
-	raw := objectValue(item, key)
+func renderParameterJSON(raw json.RawMessage) string {
 	if len(raw) == 0 {
-		return map[string]string{}
-	}
-	out := make(map[string]string, len(raw))
-	for k, v := range raw {
-		out[k] = stringJSONValue(v)
-	}
-	return out
-}
-
-func objectValue(item map[string]any, key string) map[string]any {
-	if item == nil {
-		return map[string]any{}
-	}
-	raw, ok := item[key].(map[string]any)
-	if !ok {
-		return map[string]any{}
-	}
-	return raw
-}
-
-func jsonItems(item map[string]any) []map[string]any {
-	raw := anySlice(item["items"])
-	out := make([]map[string]any, 0, len(raw))
-	for _, entry := range raw {
-		obj, ok := entry.(map[string]any)
-		if ok {
-			out = append(out, obj)
-		}
-	}
-	return out
-}
-
-func anySlice(v any) []any {
-	raw, ok := v.([]any)
-	if !ok {
-		return nil
-	}
-	return raw
-}
-
-func stringValue(item map[string]any, key string) string {
-	value, ok := item[key]
-	if !ok {
 		return ""
 	}
-	return stringJSONValue(value)
-}
-
-func boolValue(item map[string]any, key string) bool {
-	value, ok := item[key].(bool)
-	return ok && value
-}
-
-func stringJSONValue(v any) string {
-	switch value := v.(type) {
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return ""
+	}
+	switch typed := value.(type) {
 	case nil:
 		return ""
 	case string:
-		return value
+		return typed
 	case bool:
-		if value {
-			return "true"
-		}
-		return "false"
+		return strconv.FormatBool(typed)
 	case float64:
-		if value == float64(int64(value)) {
-			return fmt.Sprintf("%d", int64(value))
+		if typed == float64(int64(typed)) {
+			return strconv.FormatInt(int64(typed), 10)
 		}
-		return fmt.Sprintf("%v", value)
+		return fmt.Sprintf("%v", typed)
 	case map[string]any, []any:
-		data, _ := json.Marshal(value)
+		data, err := json.Marshal(typed)
+		if err != nil {
+			return ""
+		}
 		return string(data)
 	default:
-		return fmt.Sprintf("%v", value)
+		return fmt.Sprintf("%v", typed)
 	}
+}
+
+func nonnilStringMap(input map[string]string) map[string]string {
+	if input == nil {
+		return map[string]string{}
+	}
+	return input
+}
+
+type logEnvelope struct {
+	Error   json.RawMessage `json:"error"`
+	Result  json.RawMessage `json:"result"`
+	PodName string          `json:"podName"`
+	Content string          `json:"content"`
+}
+
+type logResult struct {
+	PodName string `json:"podName"`
+	Content string `json:"content"`
+}
+
+func emptyJSONValue(raw json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return true
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(trimmed, &object); err != nil {
+		return true
+	}
+	return len(object) == 0
 }
 
 func intString(v int) string {

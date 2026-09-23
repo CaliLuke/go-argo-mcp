@@ -1,0 +1,7 @@
+{
+  "items": [
+    {"metadata": {"name": "build", "namespace": "argo-ci"}, "spec": {"entrypoint": "main"}},
+    {"metadata": {}, "spec": null}
+  ],
+  "ignored": true
+}

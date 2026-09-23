@@ -1,0 +1,18 @@
+{
+  "metadata": {"continue": ""},
+  "items": [
+    {
+      "metadata": {"name": "build-123", "namespace": "argo-ci", "ignored": "value"},
+      "status": {
+        "phase": "Running",
+        "progress": "1/2",
+        "startedAt": "2026-09-22T16:00:00Z",
+        "finishedAt": null,
+        "ignored": true
+      },
+      "ignored": {"nested": true}
+    },
+    {"metadata": null, "status": null}
+  ],
+  "ignored": true
+}

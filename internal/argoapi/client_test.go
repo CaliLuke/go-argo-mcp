@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"slices"
 	"testing"
 	"time"
@@ -275,6 +276,33 @@ func TestWorkflowLogsReportsStreamError(t *testing.T) {
 	client := New(Config{BaseURL: server.URL})
 	if _, err := client.GetWorkflowLogs(context.Background(), "argo-ci", "build", "", "main"); err == nil {
 		t.Fatal("stream error must not look like empty logs")
+	}
+}
+
+func TestWorkflowLogsReportsNullStreamError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("{\"error\":null,\"content\":\"must not be returned\"}\n"))
+	}))
+	defer server.Close()
+	client := New(Config{BaseURL: server.URL})
+	if _, err := client.GetWorkflowLogs(context.Background(), "argo-ci", "build", "", "main"); err == nil {
+		t.Fatal("a present error key must fail even when its value is null")
+	}
+}
+
+func TestWorkflowLogsFallsBackForEmptyOrNullResult(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("{\"result\":{},\"podName\":\"empty\",\"content\":\"one\"}\n{\"result\":null,\"podName\":\"null\",\"content\":\"two\"}\n"))
+	}))
+	defer server.Close()
+	client := New(Config{BaseURL: server.URL})
+	entries, err := client.GetWorkflowLogs(context.Background(), "argo-ci", "build", "", "main")
+	if err != nil {
+		t.Fatalf("GetWorkflowLogs returned error: %v", err)
+	}
+	want := []WorkflowLogEntry{{PodName: "empty", Content: "one"}, {PodName: "null", Content: "two"}}
+	if !reflect.DeepEqual(entries, want) {
+		t.Fatalf("unexpected log entries: got %#v want %#v", entries, want)
 	}
 }
 

@@ -1,0 +1,19 @@
+{
+  "items": [
+    {
+      "metadata": {"name": "legacy"},
+      "spec": {"schedule": "0 0 * * *", "suspend": null}
+    },
+    {
+      "metadata": {"name": "modern", "namespace": "argo-ci"},
+      "spec": {
+        "schedule": "ignored legacy",
+        "schedules": ["0 6 * * *", "0 18 * * *"],
+        "timezone": "America/Los_Angeles",
+        "suspend": true,
+        "ignored": true
+      }
+    },
+    {"metadata": null, "spec": null}
+  ]
+}

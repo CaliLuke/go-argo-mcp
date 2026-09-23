@@ -1,0 +1,8 @@
+{
+  "metadata": {"name": "build"},
+  "spec": {
+    "entrypoint": "main",
+    "templates": [{"name": "main"}, {"name": "cleanup", "ignored": true}],
+    "ignored": true
+  }
+}

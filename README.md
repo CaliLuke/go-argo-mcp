@@ -123,13 +123,37 @@ Do not expose the HTTP listener to an untrusted network. The server relies on it
 
 ## Development
 
-The Loom design is the source of truth:
+The Loom design remains the MCP contract source of truth. The Argo HTTP client
+uses a small generated projection of the pinned Argo Workflows v3.7.3 Swagger
+schema. Generate both sets of models with:
 
 ```bash
-loom gen github.com/CaliLuke/go-argo-mcp/design
+make generate
 ```
 
-Never edit generated files under `gen/` manually.
+Never edit generated files under `gen/` or
+`internal/argoapi/models/models.gen.go` manually. Argo model generation is
+offline: it reads `api/argo/v3.7.3/swagger.json` and
+`api/argo/projection.json`, validates every selected field against the pinned
+schema, and writes the typed projection deterministically.
+
+To update the Argo API pin, replace the Swagger file from the exact upstream
+tag, update `api/argo/v3.7.3/PROVENANCE.md` with its URL and SHA-256, adjust the
+projection only for intentional compatibility changes, then run:
+
+```bash
+go test ./internal/argomodelgen
+make generate
+git diff --exit-code
+```
+
+The client ignores unknown response fields and keeps omitted or null optional
+fields at their existing empty defaults. It rejects malformed known structural
+fields instead of silently treating them as absent. Compatibility fixtures
+cover workflow and CronWorkflow list/detail responses, both template families,
+legacy and multiple schedules, and parameter rendering. These checks establish
+the supported response behavior; they do not claim compatibility with
+untested Argo Server versions.
 
 Quality gates:
 
@@ -164,7 +188,10 @@ The test suite includes focused HTTP client tests, confirmation and namespace-po
 
 - `design/` — Loom service and MCP contracts
 - `gen/` — committed Loom/Loom-MCP generated transport code
+- `api/argo/` — pinned upstream Swagger, provenance, and projection selection
 - `internal/argoapi/` — small direct Argo HTTP client
+- `internal/argoapi/models/` — generated typed Argo response/request projection
+- `internal/argomodelgen/` — offline projection validator and generator
 - `internal/service/` — tool behavior and safety policy
 - `internal/confirmation/` — scoped one-time confirmations
 - `internal/mcpaudit/` — generated MCP interceptor-backed JSONL audit

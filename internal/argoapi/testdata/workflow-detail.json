@@ -1,0 +1,33 @@
+{
+  "metadata": {
+    "name": "build-123",
+    "namespace": "argo-ci",
+    "labels": {"team": "platform"},
+    "annotations": null,
+    "ignored": "value"
+  },
+  "spec": {
+    "arguments": {
+      "parameters": [
+        {"name": "empty", "value": "   ", "default": "fallback"},
+        {"name": "null", "value": null, "default": null},
+        {"name": "boolean", "value": false},
+        {"name": "number", "value": 42},
+        {"name": "object", "value": {"b": 2, "a": 1}},
+        {"name": "array", "value": ["one", 2]},
+        {"name": "default", "value": "", "default": "chosen"},
+        {"name": "from", "value": "", "default": "", "valueFrom": {"parameter": "steps.make.outputs.result"}}
+      ]
+    }
+  },
+  "status": {
+    "phase": "Succeeded",
+    "message": "complete",
+    "outputs": {
+      "parameters": [
+        {"name": "result", "value": {"ok": true}}
+      ]
+    }
+  },
+  "ignored": {"future": true}
+}

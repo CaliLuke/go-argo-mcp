@@ -3,6 +3,7 @@
 FORMULA_VERSION ?= 0.0.0
 
 generate:
+	go run ./cmd/generate-argo-models
 	loom gen github.com/CaliLuke/go-argo-mcp/design
 
 build:

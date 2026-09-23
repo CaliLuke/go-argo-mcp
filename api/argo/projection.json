@@ -1,0 +1,189 @@
+{
+  "package": "models",
+  "sourceVersion": "v3.7.3",
+  "definitions": [
+    {
+      "source": "io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta",
+      "name": "ObjectMeta",
+      "fields": [
+        {"source": "name", "name": "Name", "goType": "string", "json": "name", "schema": "string"},
+        {"source": "namespace", "name": "Namespace", "goType": "string", "json": "namespace", "schema": "string"},
+        {"source": "labels", "name": "Labels", "goType": "map[string]string", "json": "labels", "schema": "map:string"},
+        {"source": "annotations", "name": "Annotations", "goType": "map[string]string", "json": "annotations", "schema": "map:string"}
+      ]
+    },
+    {
+      "source": "io.k8s.apimachinery.pkg.apis.meta.v1.ListMeta",
+      "name": "ListMeta",
+      "fields": [
+        {"source": "continue", "name": "Continue", "goType": "string", "json": "continue", "schema": "string"}
+      ]
+    },
+    {
+      "source": "io.argoproj.workflow.v1alpha1.Parameter",
+      "name": "Parameter",
+      "fields": [
+        {"source": "name", "name": "Name", "goType": "string", "json": "name", "schema": "string"},
+        {"source": "value", "name": "Value", "goType": "json.RawMessage", "json": "value", "schema": "string", "compatibilityOverride": "Accept scalar and structured values returned by existing Argo installations."},
+        {"source": "default", "name": "Default", "goType": "json.RawMessage", "json": "default", "schema": "string", "compatibilityOverride": "Preserve the client's historical scalar and JSON rendering."},
+        {"source": "valueFrom", "name": "ValueFrom", "goType": "json.RawMessage", "json": "valueFrom", "schema": "ref:io.argoproj.workflow.v1alpha1.ValueFrom", "compatibilityOverride": "Preserve the client's historical canonical JSON fallback."}
+      ]
+    },
+    {
+      "source": "io.argoproj.workflow.v1alpha1.Arguments",
+      "name": "Arguments",
+      "fields": [
+        {"source": "parameters", "name": "Parameters", "goType": "[]Parameter", "json": "parameters", "schema": "array:ref:io.argoproj.workflow.v1alpha1.Parameter"}
+      ]
+    },
+    {
+      "source": "io.argoproj.workflow.v1alpha1.Outputs",
+      "name": "Outputs",
+      "fields": [
+        {"source": "parameters", "name": "Parameters", "goType": "[]Parameter", "json": "parameters", "schema": "array:ref:io.argoproj.workflow.v1alpha1.Parameter"}
+      ]
+    },
+    {
+      "source": "io.argoproj.workflow.v1alpha1.Template",
+      "name": "Template",
+      "fields": [
+        {"source": "name", "name": "Name", "goType": "string", "json": "name", "schema": "string"}
+      ]
+    },
+    {
+      "source": "io.argoproj.workflow.v1alpha1.WorkflowSpec",
+      "name": "WorkflowSpec",
+      "fields": [
+        {"source": "arguments", "name": "Arguments", "goType": "Arguments", "json": "arguments", "schema": "ref:io.argoproj.workflow.v1alpha1.Arguments"},
+        {"source": "entrypoint", "name": "Entrypoint", "goType": "string", "json": "entrypoint", "schema": "string"},
+        {"source": "templates", "name": "Templates", "goType": "[]Template", "json": "templates", "schema": "array:ref:io.argoproj.workflow.v1alpha1.Template"}
+      ]
+    },
+    {
+      "source": "io.argoproj.workflow.v1alpha1.WorkflowStatus",
+      "name": "WorkflowStatus",
+      "fields": [
+        {"source": "phase", "name": "Phase", "goType": "string", "json": "phase", "schema": "string"},
+        {"source": "progress", "name": "Progress", "goType": "string", "json": "progress", "schema": "string"},
+        {"source": "startedAt", "name": "StartedAt", "goType": "string", "json": "startedAt", "schema": "ref:io.k8s.apimachinery.pkg.apis.meta.v1.Time", "compatibilityOverride": "Decode Kubernetes time's JSON string representation without a Kubernetes dependency."},
+        {"source": "finishedAt", "name": "FinishedAt", "goType": "string", "json": "finishedAt", "schema": "ref:io.k8s.apimachinery.pkg.apis.meta.v1.Time", "compatibilityOverride": "Decode Kubernetes time's JSON string representation without a Kubernetes dependency."},
+        {"source": "message", "name": "Message", "goType": "string", "json": "message", "schema": "string"},
+        {"source": "outputs", "name": "Outputs", "goType": "Outputs", "json": "outputs", "schema": "ref:io.argoproj.workflow.v1alpha1.Outputs"}
+      ]
+    },
+    {
+      "source": "io.argoproj.workflow.v1alpha1.Workflow",
+      "name": "Workflow",
+      "fields": [
+        {"source": "metadata", "name": "Metadata", "goType": "ObjectMeta", "json": "metadata", "schema": "ref:io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta"},
+        {"source": "spec", "name": "Spec", "goType": "WorkflowSpec", "json": "spec", "schema": "ref:io.argoproj.workflow.v1alpha1.WorkflowSpec"},
+        {"source": "status", "name": "Status", "goType": "WorkflowStatus", "json": "status", "schema": "ref:io.argoproj.workflow.v1alpha1.WorkflowStatus"}
+      ]
+    },
+    {
+      "source": "io.argoproj.workflow.v1alpha1.WorkflowList",
+      "name": "WorkflowList",
+      "fields": [
+        {"source": "metadata", "name": "Metadata", "goType": "ListMeta", "json": "metadata", "schema": "ref:io.k8s.apimachinery.pkg.apis.meta.v1.ListMeta"},
+        {"source": "items", "name": "Items", "goType": "[]Workflow", "json": "items", "schema": "array:ref:io.argoproj.workflow.v1alpha1.Workflow"}
+      ]
+    },
+    {
+      "source": "io.argoproj.workflow.v1alpha1.CronWorkflowSpec",
+      "name": "CronWorkflowSpec",
+      "fields": [
+        {"source": "schedule", "name": "Schedule", "goType": "string", "json": "schedule", "schema": "string"},
+        {"source": "schedules", "name": "Schedules", "goType": "[]string", "json": "schedules", "schema": "array:string"},
+        {"source": "timezone", "name": "Timezone", "goType": "string", "json": "timezone", "schema": "string"},
+        {"source": "suspend", "name": "Suspend", "goType": "bool", "json": "suspend", "schema": "boolean"}
+      ]
+    },
+    {
+      "source": "io.argoproj.workflow.v1alpha1.CronWorkflowStatus",
+      "name": "CronWorkflowStatus",
+      "fields": [
+        {"source": "lastScheduledTime", "name": "LastScheduledTime", "goType": "string", "json": "lastScheduledTime", "schema": "ref:io.k8s.apimachinery.pkg.apis.meta.v1.Time", "compatibilityOverride": "Decode Kubernetes time's JSON string representation without a Kubernetes dependency."},
+        {"name": "NextScheduledTime", "goType": "string", "json": "nextScheduledTime", "extension": "Compatibility field returned by some Argo Server versions; absent from the pinned Swagger."}
+      ]
+    },
+    {
+      "source": "io.argoproj.workflow.v1alpha1.CronWorkflow",
+      "name": "CronWorkflow",
+      "fields": [
+        {"source": "metadata", "name": "Metadata", "goType": "ObjectMeta", "json": "metadata", "schema": "ref:io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta"},
+        {"source": "spec", "name": "Spec", "goType": "CronWorkflowSpec", "json": "spec", "schema": "ref:io.argoproj.workflow.v1alpha1.CronWorkflowSpec"},
+        {"source": "status", "name": "Status", "goType": "CronWorkflowStatus", "json": "status", "schema": "ref:io.argoproj.workflow.v1alpha1.CronWorkflowStatus"}
+      ]
+    },
+    {
+      "source": "io.argoproj.workflow.v1alpha1.CronWorkflowList",
+      "name": "CronWorkflowList",
+      "fields": [
+        {"source": "items", "name": "Items", "goType": "[]CronWorkflow", "json": "items", "schema": "array:ref:io.argoproj.workflow.v1alpha1.CronWorkflow"}
+      ]
+    },
+    {
+      "source": "io.argoproj.workflow.v1alpha1.WorkflowTemplate",
+      "name": "WorkflowTemplate",
+      "fields": [
+        {"source": "metadata", "name": "Metadata", "goType": "ObjectMeta", "json": "metadata", "schema": "ref:io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta"},
+        {"source": "spec", "name": "Spec", "goType": "WorkflowSpec", "json": "spec", "schema": "ref:io.argoproj.workflow.v1alpha1.WorkflowSpec"}
+      ]
+    },
+    {
+      "source": "io.argoproj.workflow.v1alpha1.WorkflowTemplateList",
+      "name": "WorkflowTemplateList",
+      "fields": [
+        {"source": "items", "name": "Items", "goType": "[]WorkflowTemplate", "json": "items", "schema": "array:ref:io.argoproj.workflow.v1alpha1.WorkflowTemplate"}
+      ]
+    },
+    {
+      "source": "io.argoproj.workflow.v1alpha1.ClusterWorkflowTemplate",
+      "name": "ClusterWorkflowTemplate",
+      "fields": [
+        {"source": "metadata", "name": "Metadata", "goType": "ObjectMeta", "json": "metadata", "schema": "ref:io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta"},
+        {"source": "spec", "name": "Spec", "goType": "WorkflowSpec", "json": "spec", "schema": "ref:io.argoproj.workflow.v1alpha1.WorkflowSpec"}
+      ]
+    },
+    {
+      "source": "io.argoproj.workflow.v1alpha1.ClusterWorkflowTemplateList",
+      "name": "ClusterWorkflowTemplateList",
+      "fields": [
+        {"source": "items", "name": "Items", "goType": "[]ClusterWorkflowTemplate", "json": "items", "schema": "array:ref:io.argoproj.workflow.v1alpha1.ClusterWorkflowTemplate"}
+      ]
+    },
+    {
+      "source": "io.argoproj.workflow.v1alpha1.WorkflowRetryRequest",
+      "name": "WorkflowRetryRequest",
+      "fields": [
+        {"source": "name", "name": "Name", "goType": "string", "json": "name", "schema": "string", "omitEmpty": false},
+        {"source": "namespace", "name": "Namespace", "goType": "string", "json": "namespace", "schema": "string", "omitEmpty": false},
+        {"source": "restartSuccessful", "name": "RestartSuccessful", "goType": "bool", "json": "restartSuccessful", "schema": "boolean", "omitEmpty": false}
+      ]
+    },
+    {
+      "source": "io.argoproj.workflow.v1alpha1.WorkflowTerminateRequest",
+      "name": "WorkflowTerminateRequest",
+      "fields": [
+        {"source": "name", "name": "Name", "goType": "string", "json": "name", "schema": "string", "omitEmpty": false},
+        {"source": "namespace", "name": "Namespace", "goType": "string", "json": "namespace", "schema": "string", "omitEmpty": false}
+      ]
+    },
+    {
+      "source": "io.argoproj.workflow.v1alpha1.CronWorkflowSuspendRequest",
+      "name": "CronWorkflowSuspendRequest",
+      "fields": [
+        {"source": "name", "name": "Name", "goType": "string", "json": "name", "schema": "string", "omitEmpty": false},
+        {"source": "namespace", "name": "Namespace", "goType": "string", "json": "namespace", "schema": "string", "omitEmpty": false}
+      ]
+    },
+    {
+      "source": "io.argoproj.workflow.v1alpha1.CronWorkflowResumeRequest",
+      "name": "CronWorkflowResumeRequest",
+      "fields": [
+        {"source": "name", "name": "Name", "goType": "string", "json": "name", "schema": "string", "omitEmpty": false},
+        {"source": "namespace", "name": "Namespace", "goType": "string", "json": "namespace", "schema": "string", "omitEmpty": false}
+      ]
+    }
+  ]
+}

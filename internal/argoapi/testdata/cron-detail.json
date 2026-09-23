@@ -1,0 +1,9 @@
+{
+  "metadata": {"name": "nightly"},
+  "spec": {"schedules": ["0 6 * * *"], "timezone": "UTC", "suspend": false},
+  "status": {
+    "lastScheduledTime": "2026-09-22T06:00:00Z",
+    "nextScheduledTime": "2026-09-23T06:00:00Z",
+    "ignored": true
+  }
+}

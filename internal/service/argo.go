@@ -242,8 +242,8 @@ func (s *ArgoService) TerminateWorkflow(ctx context.Context, payload *genargo.Te
 	dryRun := boolPtrDefault(payload.DryRun, true)
 	token := stringPtrValue(payload.ConfirmationToken)
 
-	if !s.policy.AllowDestructive {
-		return deniedActionResult("terminate_workflow", "MCP_ALLOW_DESTRUCTIVE", namespace, name), nil
+	if !s.policy.AllowMutations || !s.policy.AllowDestructive {
+		return deniedActionResult("terminate_workflow", "MCP_ALLOW_MUTATIONS+MCP_ALLOW_DESTRUCTIVE", namespace, name), nil
 	}
 	client, err := s.requireClient()
 	if err != nil {
@@ -270,7 +270,7 @@ func (s *ArgoService) TerminateWorkflow(ctx context.Context, payload *genargo.Te
 		})
 	}
 	if err := client.TerminateWorkflow(ctx, namespace, name); err != nil {
-		return nil, mapArgoError(err, argoTarget{action: "terminate", resource: "Workflow", namespace: namespace, name: name, listTool: "list_workflows"})
+		return nil, mapMutationError(err, argoTarget{action: "terminate", resource: "Workflow", namespace: namespace, name: name, listTool: "list_workflows"})
 	}
 	res := actionResult("ok", fmt.Sprintf("Workflow %q in namespace %q was terminated.", name, namespace), namespace, name)
 	res.Reason = strPtr(reason)
@@ -287,15 +287,33 @@ func (s *ArgoService) RetryWorkflow(ctx context.Context, payload *genargo.RetryW
 		return nil, fmt.Errorf("name is required")
 	}
 	restartSuccessful := boolPtrDefault(payload.RestartSuccessful, false)
-	if !s.policy.AllowMutations {
-		return deniedActionResult("retry_workflow", "MCP_ALLOW_MUTATIONS", namespace, name), nil
+	dryRun := boolPtrDefault(payload.DryRun, true)
+	if !s.policy.AllowMutations || !s.policy.AllowDestructive {
+		return deniedActionResult("retry_workflow", "MCP_ALLOW_MUTATIONS+MCP_ALLOW_DESTRUCTIVE", namespace, name), nil
 	}
 	client, err := s.requireClient()
 	if err != nil {
 		return nil, err
 	}
+	actionScope := fmt.Sprintf("retry_workflow:restart_successful=%t", restartSuccessful)
+	if dryRun {
+		confirmationToken, err := s.confirmations.Issue(actionScope, namespace, name)
+		if err != nil {
+			return nil, genargo.MakeConfirmationInvalid(err)
+		}
+		res := actionResult("dry_run", fmt.Sprintf("Retry preview generated for Workflow %q in namespace %q; no Argo request was made.", name, namespace), namespace, name)
+		res.Preview = strPtr(fmt.Sprintf("Would retry Workflow %q in namespace %q with restart_successful=%t.", name, namespace, restartSuccessful))
+		res.Instructions = strPtr("Call retry_workflow once with the same name, namespace, and restart_successful, dry_run=false, and the returned confirmation_token.")
+		res.ConfirmationToken = strPtr(confirmationToken)
+		res.RestartSuccessful = boolPtr(restartSuccessful)
+		return res, nil
+	}
+	if s.policy.RequireConfirmation && !s.confirmations.Consume(stringPtrValue(payload.ConfirmationToken), actionScope, namespace, name) {
+		err := genargo.MakeConfirmationInvalid(fmt.Errorf("invalid confirmation token for retry_workflow %s/%s", namespace, name))
+		return nil, loom.WithErrorRemedy(err, &loom.ErrorRemedy{Code: "argo.confirmation.refresh", SafeMessage: fmt.Sprintf("Confirmation for Workflow %q in namespace %q is invalid, expired, already used, or scoped to different retry inputs.", name, namespace), RetryHint: "Run retry_workflow again with the same name, namespace, and restart_successful in dry-run mode, then use the new confirmation_token once. No Argo request was made."})
+	}
 	if err := client.RetryWorkflow(ctx, namespace, name, restartSuccessful); err != nil {
-		return nil, mapArgoError(err, argoTarget{action: "retry", resource: "Workflow", namespace: namespace, name: name, listTool: "list_workflows"})
+		return nil, mapMutationError(err, argoTarget{action: "retry", resource: "Workflow", namespace: namespace, name: name, listTool: "list_workflows"})
 	}
 	res := actionResult("ok", fmt.Sprintf("Retry was initiated for Workflow %q in namespace %q.", name, namespace), namespace, name)
 	res.RestartSuccessful = boolPtr(restartSuccessful)
@@ -410,7 +428,7 @@ func (s *ArgoService) ToggleCronSuspension(ctx context.Context, payload *genargo
 		return nil, err
 	}
 	if err := client.ToggleCronSuspension(ctx, namespace, name, payload.Suspend); err != nil {
-		return nil, mapArgoError(err, argoTarget{action: suspensionAction(payload.Suspend), resource: "CronWorkflow", namespace: namespace, name: name, listTool: "list_cron_workflows"})
+		return nil, mapMutationError(err, argoTarget{action: suspensionAction(payload.Suspend), resource: "CronWorkflow", namespace: namespace, name: name, listTool: "list_cron_workflows"})
 	}
 	return actionResult("ok", fmt.Sprintf("CronWorkflow %q in namespace %q was %s.", name, namespace, suspensionVerb(payload.Suspend)), namespace, name), nil
 }
@@ -702,6 +720,36 @@ func mapArgoError(err error, target argoTarget) error {
 	})
 }
 
+func mapNewArgoError(err error, target argoTarget) error {
+	var httpErr *argoapi.HTTPError
+	if errors.As(err, &httpErr) {
+		switch httpErr.StatusCode {
+		case http.StatusBadRequest, http.StatusUnprocessableEntity:
+			return loom.WithErrorRemedy(genargo.MakeInvalidInput(err), &loom.ErrorRemedy{Code: "argo.input.invalid", SafeMessage: fmt.Sprintf("Argo rejected invalid input while trying to %s %s.", target.action, target.describe()), RetryHint: "Correct the tool input before retrying."})
+		case http.StatusConflict:
+			return loom.WithErrorRemedy(genargo.MakeInvalidState(err), &loom.ErrorRemedy{Code: "argo.state.invalid", SafeMessage: fmt.Sprintf("%s is not in a state that permits this action.", target.describe()), RetryHint: "Inspect the current workflow state before retrying."})
+		case http.StatusTooManyRequests:
+			return loom.WithErrorRemedy(genargo.MakeArgoAPIError(err), &loom.ErrorRemedy{Code: "argo.api.retry", SafeMessage: fmt.Sprintf("Argo temporarily failed while trying to %s %s.", target.action, target.describe()), RetryHint: "Wait briefly, then retry after checking current workflow state."})
+		}
+	}
+	return mapArgoError(err, target)
+}
+
+func mapMutationError(err error, target argoTarget) error {
+	mapped := mapNewArgoError(err, target)
+	remedy := loom.ExtractErrorRemedy(mapped)
+	if remedy == nil {
+		return mapped
+	}
+	copy := *remedy
+	copy.RetryHint = "The mutation may have reached Argo. Check the workflow's current state before deciding whether to retry; the server will not retry automatically."
+	var serviceErr *loom.ServiceError
+	if errors.As(mapped, &serviceErr) {
+		return loom.WithErrorRemedy(serviceErr, &copy)
+	}
+	return mapped
+}
+
 func (s *ArgoService) authorizeNamespace(namespace string) error {
 	if namespaceInList(namespace, s.policy.DeniedNamespaces) {
 		return namespaceDeniedError(namespace, fmt.Errorf("namespace %q is explicitly denied", namespace))
@@ -746,7 +794,11 @@ func actionResult(status, message, namespace, name string) *genargo.ActionResult
 
 func deniedActionResult(toolName, setting, namespace, name string) *genargo.ActionResult {
 	res := actionResult("denied", fmt.Sprintf("%s is disabled by server policy.", toolName), namespace, name)
-	res.Instructions = strPtr(fmt.Sprintf("Ask the server operator to set %s=true and restart the server. No Argo request was made.", setting))
+	if setting == "MCP_ALLOW_MUTATIONS+MCP_ALLOW_DESTRUCTIVE" {
+		res.Instructions = strPtr("Ask the server operator to set MCP_ALLOW_MUTATIONS=true and MCP_ALLOW_DESTRUCTIVE=true and restart the server. No Argo request was made.")
+	} else {
+		res.Instructions = strPtr(fmt.Sprintf("Ask the server operator to set %s=true and restart the server. No Argo request was made.", setting))
+	}
 	return res
 }
 

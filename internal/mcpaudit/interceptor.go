@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -69,7 +70,7 @@ func (l *Logger) Interceptor() mcpargo.ToolCallInterceptor {
 		}
 		_ = l.write(Record{
 			Tool:       info.Tool(),
-			Arguments:  redactArguments(info.RawArguments()),
+			Arguments:  redactArguments(info.Tool(), info.RawArguments()),
 			Status:     status,
 			Summary:    truncate(summary, maxSummaryLength),
 			DurationMS: time.Since(start).Milliseconds(),
@@ -124,7 +125,7 @@ func resultSummary(result *mcpargo.ToolsCallResult) string {
 	return string(encoded)
 }
 
-func redactArguments(raw []byte) json.RawMessage {
+func redactArguments(tool string, raw []byte) json.RawMessage {
 	if len(raw) == 0 {
 		return json.RawMessage(`{}`)
 	}
@@ -132,7 +133,7 @@ func redactArguments(raw []byte) json.RawMessage {
 	if json.Unmarshal(raw, &value) != nil {
 		return json.RawMessage(`{"redacted":"invalid JSON"}`)
 	}
-	redactValue(value)
+	redactValue(value, auditRedactionPolicy(tool))
 	redacted, err := json.Marshal(value)
 	if err != nil {
 		return json.RawMessage(`{"redacted":"unavailable"}`)
@@ -140,21 +141,61 @@ func redactArguments(raw []byte) json.RawMessage {
 	return redacted
 }
 
-func redactValue(value any) {
+type redactionPolicy struct {
+	manifest   bool
+	parameters bool
+}
+
+func auditRedactionPolicy(tool string) redactionPolicy {
+	switch tool {
+	case "lint_workflow", "lint_workflow_template":
+		return redactionPolicy{manifest: true}
+	case "submit_workflow_template", "resubmit_workflow", "trigger_cron_workflow":
+		return redactionPolicy{parameters: true}
+	default:
+		return redactionPolicy{}
+	}
+}
+
+func redactValue(value any, policy redactionPolicy) {
 	switch typed := value.(type) {
 	case map[string]any:
 		for key, child := range typed {
 			lower := strings.ToLower(key)
+			if policy.manifest && lower == "manifest_json" {
+				typed[key] = "[REDACTED]"
+				continue
+			}
+			if policy.parameters && lower == "parameters" {
+				typed[key] = summarizeParameters(child)
+				continue
+			}
 			if strings.Contains(lower, "token") || strings.Contains(lower, "password") || strings.Contains(lower, "secret") {
 				typed[key] = "[REDACTED]"
 				continue
 			}
-			redactValue(child)
+			redactValue(child, policy)
 		}
 	case []any:
 		for _, child := range typed {
-			redactValue(child)
+			redactValue(child, policy)
 		}
+	}
+}
+
+func summarizeParameters(value any) any {
+	parameters, ok := value.(map[string]any)
+	if !ok {
+		return "[REDACTED]"
+	}
+	names := make([]string, 0, len(parameters))
+	for name := range parameters {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return map[string]any{
+		"count": len(names),
+		"names": names,
 	}
 }
 

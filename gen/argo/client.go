@@ -28,11 +28,23 @@ type Client struct {
 	GetWorkflowTemplateEndpoint          loom.Endpoint
 	ListClusterWorkflowTemplatesEndpoint loom.Endpoint
 	GetClusterWorkflowTemplateEndpoint   loom.Endpoint
+	GetWorkflowNodesEndpoint             loom.Endpoint
+	GetWorkflowEventsEndpoint            loom.Endpoint
+	ListArchivedWorkflowsEndpoint        loom.Endpoint
+	GetArchivedWorkflowEndpoint          loom.Endpoint
+	GetWorkflowArtifactsEndpoint         loom.Endpoint
+	LintWorkflowEndpoint                 loom.Endpoint
+	LintWorkflowTemplateEndpoint         loom.Endpoint
+	SubmitWorkflowTemplateEndpoint       loom.Endpoint
+	SuspendWorkflowEndpoint              loom.Endpoint
+	ResumeWorkflowEndpoint               loom.Endpoint
+	ResubmitWorkflowEndpoint             loom.Endpoint
+	TriggerCronWorkflowEndpoint          loom.Endpoint
 }
 
 // NewClient initializes a "argo" service client given the endpoints.
-func NewClient(listWorkflows, getWorkflow, getWorkflowLogs, terminateWorkflow, retryWorkflow, listCronWorkflows, getCronWorkflow, getCronHistory, toggleCronSuspension, listWorkflowTemplates, getWorkflowTemplate, listClusterWorkflowTemplates, getClusterWorkflowTemplate loom.Endpoint) *Client {
-	return &Client{ListWorkflowsEndpoint: listWorkflows, GetWorkflowEndpoint: getWorkflow, GetWorkflowLogsEndpoint: getWorkflowLogs, TerminateWorkflowEndpoint: terminateWorkflow, RetryWorkflowEndpoint: retryWorkflow, ListCronWorkflowsEndpoint: listCronWorkflows, GetCronWorkflowEndpoint: getCronWorkflow, GetCronHistoryEndpoint: getCronHistory, ToggleCronSuspensionEndpoint: toggleCronSuspension, ListWorkflowTemplatesEndpoint: listWorkflowTemplates, GetWorkflowTemplateEndpoint: getWorkflowTemplate, ListClusterWorkflowTemplatesEndpoint: listClusterWorkflowTemplates, GetClusterWorkflowTemplateEndpoint: getClusterWorkflowTemplate}
+func NewClient(listWorkflows, getWorkflow, getWorkflowLogs, terminateWorkflow, retryWorkflow, listCronWorkflows, getCronWorkflow, getCronHistory, toggleCronSuspension, listWorkflowTemplates, getWorkflowTemplate, listClusterWorkflowTemplates, getClusterWorkflowTemplate, getWorkflowNodes, getWorkflowEvents, listArchivedWorkflows, getArchivedWorkflow, getWorkflowArtifacts, lintWorkflow, lintWorkflowTemplate, submitWorkflowTemplate, suspendWorkflow, resumeWorkflow, resubmitWorkflow, triggerCronWorkflow loom.Endpoint) *Client {
+	return &Client{ListWorkflowsEndpoint: listWorkflows, GetWorkflowEndpoint: getWorkflow, GetWorkflowLogsEndpoint: getWorkflowLogs, TerminateWorkflowEndpoint: terminateWorkflow, RetryWorkflowEndpoint: retryWorkflow, ListCronWorkflowsEndpoint: listCronWorkflows, GetCronWorkflowEndpoint: getCronWorkflow, GetCronHistoryEndpoint: getCronHistory, ToggleCronSuspensionEndpoint: toggleCronSuspension, ListWorkflowTemplatesEndpoint: listWorkflowTemplates, GetWorkflowTemplateEndpoint: getWorkflowTemplate, ListClusterWorkflowTemplatesEndpoint: listClusterWorkflowTemplates, GetClusterWorkflowTemplateEndpoint: getClusterWorkflowTemplate, GetWorkflowNodesEndpoint: getWorkflowNodes, GetWorkflowEventsEndpoint: getWorkflowEvents, ListArchivedWorkflowsEndpoint: listArchivedWorkflows, GetArchivedWorkflowEndpoint: getArchivedWorkflow, GetWorkflowArtifactsEndpoint: getWorkflowArtifacts, LintWorkflowEndpoint: lintWorkflow, LintWorkflowTemplateEndpoint: lintWorkflowTemplate, SubmitWorkflowTemplateEndpoint: submitWorkflowTemplate, SuspendWorkflowEndpoint: suspendWorkflow, ResumeWorkflowEndpoint: resumeWorkflow, ResubmitWorkflowEndpoint: resubmitWorkflow, TriggerCronWorkflowEndpoint: triggerCronWorkflow}
 }
 
 // ListWorkflows calls the "ListWorkflows" endpoint of the "argo" service.
@@ -42,6 +54,8 @@ func NewClient(listWorkflows, getWorkflow, getWorkflowLogs, terminateWorkflow, r
 // - "argo_not_found" (type *loom.ServiceError)
 // - "argo_access_denied" (type *loom.ServiceError)
 // - "argo_request_rejected" (type *loom.ServiceError)
+// - "invalid_input" (type *loom.ServiceError)
+// - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
 // - error: internal error
@@ -61,6 +75,8 @@ func (c *Client) ListWorkflows(ctx context.Context, p *ListWorkflowsPayload) (re
 // - "argo_not_found" (type *loom.ServiceError)
 // - "argo_access_denied" (type *loom.ServiceError)
 // - "argo_request_rejected" (type *loom.ServiceError)
+// - "invalid_input" (type *loom.ServiceError)
+// - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
 // - error: internal error
@@ -80,6 +96,8 @@ func (c *Client) GetWorkflow(ctx context.Context, p *GetWorkflowPayload) (res *W
 // - "argo_not_found" (type *loom.ServiceError)
 // - "argo_access_denied" (type *loom.ServiceError)
 // - "argo_request_rejected" (type *loom.ServiceError)
+// - "invalid_input" (type *loom.ServiceError)
+// - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
 // - error: internal error
@@ -100,6 +118,8 @@ func (c *Client) GetWorkflowLogs(ctx context.Context, p *GetWorkflowLogsPayload)
 // - "argo_not_found" (type *loom.ServiceError)
 // - "argo_access_denied" (type *loom.ServiceError)
 // - "argo_request_rejected" (type *loom.ServiceError)
+// - "invalid_input" (type *loom.ServiceError)
+// - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
 // - error: internal error
@@ -119,6 +139,8 @@ func (c *Client) TerminateWorkflow(ctx context.Context, p *TerminateWorkflowPayl
 // - "argo_not_found" (type *loom.ServiceError)
 // - "argo_access_denied" (type *loom.ServiceError)
 // - "argo_request_rejected" (type *loom.ServiceError)
+// - "invalid_input" (type *loom.ServiceError)
+// - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
 // - error: internal error
@@ -139,6 +161,8 @@ func (c *Client) RetryWorkflow(ctx context.Context, p *RetryWorkflowPayload) (re
 // - "argo_not_found" (type *loom.ServiceError)
 // - "argo_access_denied" (type *loom.ServiceError)
 // - "argo_request_rejected" (type *loom.ServiceError)
+// - "invalid_input" (type *loom.ServiceError)
+// - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
 // - error: internal error
@@ -158,6 +182,8 @@ func (c *Client) ListCronWorkflows(ctx context.Context, p *ListCronWorkflowsPayl
 // - "argo_not_found" (type *loom.ServiceError)
 // - "argo_access_denied" (type *loom.ServiceError)
 // - "argo_request_rejected" (type *loom.ServiceError)
+// - "invalid_input" (type *loom.ServiceError)
+// - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
 // - error: internal error
@@ -177,6 +203,8 @@ func (c *Client) GetCronWorkflow(ctx context.Context, p *GetCronWorkflowPayload)
 // - "argo_not_found" (type *loom.ServiceError)
 // - "argo_access_denied" (type *loom.ServiceError)
 // - "argo_request_rejected" (type *loom.ServiceError)
+// - "invalid_input" (type *loom.ServiceError)
+// - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
 // - error: internal error
@@ -197,6 +225,8 @@ func (c *Client) GetCronHistory(ctx context.Context, p *GetCronHistoryPayload) (
 // - "argo_not_found" (type *loom.ServiceError)
 // - "argo_access_denied" (type *loom.ServiceError)
 // - "argo_request_rejected" (type *loom.ServiceError)
+// - "invalid_input" (type *loom.ServiceError)
+// - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
 // - error: internal error
@@ -217,6 +247,8 @@ func (c *Client) ToggleCronSuspension(ctx context.Context, p *ToggleCronSuspensi
 // - "argo_not_found" (type *loom.ServiceError)
 // - "argo_access_denied" (type *loom.ServiceError)
 // - "argo_request_rejected" (type *loom.ServiceError)
+// - "invalid_input" (type *loom.ServiceError)
+// - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
 // - error: internal error
@@ -237,6 +269,8 @@ func (c *Client) ListWorkflowTemplates(ctx context.Context, p *ListWorkflowTempl
 // - "argo_not_found" (type *loom.ServiceError)
 // - "argo_access_denied" (type *loom.ServiceError)
 // - "argo_request_rejected" (type *loom.ServiceError)
+// - "invalid_input" (type *loom.ServiceError)
+// - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
 // - error: internal error
@@ -257,6 +291,8 @@ func (c *Client) GetWorkflowTemplate(ctx context.Context, p *GetWorkflowTemplate
 // - "argo_not_found" (type *loom.ServiceError)
 // - "argo_access_denied" (type *loom.ServiceError)
 // - "argo_request_rejected" (type *loom.ServiceError)
+// - "invalid_input" (type *loom.ServiceError)
+// - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
 // - error: internal error
@@ -277,6 +313,8 @@ func (c *Client) ListClusterWorkflowTemplates(ctx context.Context, p *ListCluste
 // - "argo_not_found" (type *loom.ServiceError)
 // - "argo_access_denied" (type *loom.ServiceError)
 // - "argo_request_rejected" (type *loom.ServiceError)
+// - "invalid_input" (type *loom.ServiceError)
+// - "invalid_state" (type *loom.ServiceError)
 // - "namespace_denied" (type *loom.ServiceError)
 // - "confirmation_invalid" (type *loom.ServiceError)
 // - error: internal error
@@ -287,4 +325,263 @@ func (c *Client) GetClusterWorkflowTemplate(ctx context.Context, p *GetClusterWo
 		return
 	}
 	return ires.(*ClusterWorkflowTemplateDetailResult), nil
+}
+
+// GetWorkflowNodes calls the "GetWorkflowNodes" endpoint of the "argo" service.
+// GetWorkflowNodes may return the following errors:
+// - "configuration_error" (type *loom.ServiceError)
+// - "argo_api_error" (type *loom.ServiceError)
+// - "argo_not_found" (type *loom.ServiceError)
+// - "argo_access_denied" (type *loom.ServiceError)
+// - "argo_request_rejected" (type *loom.ServiceError)
+// - "invalid_input" (type *loom.ServiceError)
+// - "invalid_state" (type *loom.ServiceError)
+// - "namespace_denied" (type *loom.ServiceError)
+// - "confirmation_invalid" (type *loom.ServiceError)
+// - error: internal error
+func (c *Client) GetWorkflowNodes(ctx context.Context, p *GetWorkflowNodesPayload) (res *WorkflowNodesResult, err error) {
+	var ires any
+	ires, err = c.GetWorkflowNodesEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*WorkflowNodesResult), nil
+}
+
+// GetWorkflowEvents calls the "GetWorkflowEvents" endpoint of the "argo"
+// service.
+// GetWorkflowEvents may return the following errors:
+// - "configuration_error" (type *loom.ServiceError)
+// - "argo_api_error" (type *loom.ServiceError)
+// - "argo_not_found" (type *loom.ServiceError)
+// - "argo_access_denied" (type *loom.ServiceError)
+// - "argo_request_rejected" (type *loom.ServiceError)
+// - "invalid_input" (type *loom.ServiceError)
+// - "invalid_state" (type *loom.ServiceError)
+// - "namespace_denied" (type *loom.ServiceError)
+// - "confirmation_invalid" (type *loom.ServiceError)
+// - error: internal error
+func (c *Client) GetWorkflowEvents(ctx context.Context, p *GetWorkflowEventsPayload) (res *WorkflowEventsResult, err error) {
+	var ires any
+	ires, err = c.GetWorkflowEventsEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*WorkflowEventsResult), nil
+}
+
+// ListArchivedWorkflows calls the "ListArchivedWorkflows" endpoint of the
+// "argo" service.
+// ListArchivedWorkflows may return the following errors:
+// - "configuration_error" (type *loom.ServiceError)
+// - "argo_api_error" (type *loom.ServiceError)
+// - "argo_not_found" (type *loom.ServiceError)
+// - "argo_access_denied" (type *loom.ServiceError)
+// - "argo_request_rejected" (type *loom.ServiceError)
+// - "invalid_input" (type *loom.ServiceError)
+// - "invalid_state" (type *loom.ServiceError)
+// - "namespace_denied" (type *loom.ServiceError)
+// - "confirmation_invalid" (type *loom.ServiceError)
+// - error: internal error
+func (c *Client) ListArchivedWorkflows(ctx context.Context, p *ListArchivedWorkflowsPayload) (res *ListArchivedWorkflowsResult, err error) {
+	var ires any
+	ires, err = c.ListArchivedWorkflowsEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*ListArchivedWorkflowsResult), nil
+}
+
+// GetArchivedWorkflow calls the "GetArchivedWorkflow" endpoint of the "argo"
+// service.
+// GetArchivedWorkflow may return the following errors:
+// - "configuration_error" (type *loom.ServiceError)
+// - "argo_api_error" (type *loom.ServiceError)
+// - "argo_not_found" (type *loom.ServiceError)
+// - "argo_access_denied" (type *loom.ServiceError)
+// - "argo_request_rejected" (type *loom.ServiceError)
+// - "invalid_input" (type *loom.ServiceError)
+// - "invalid_state" (type *loom.ServiceError)
+// - "namespace_denied" (type *loom.ServiceError)
+// - "confirmation_invalid" (type *loom.ServiceError)
+// - error: internal error
+func (c *Client) GetArchivedWorkflow(ctx context.Context, p *GetArchivedWorkflowPayload) (res *ArchivedWorkflowDetailResult, err error) {
+	var ires any
+	ires, err = c.GetArchivedWorkflowEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*ArchivedWorkflowDetailResult), nil
+}
+
+// GetWorkflowArtifacts calls the "GetWorkflowArtifacts" endpoint of the "argo"
+// service.
+// GetWorkflowArtifacts may return the following errors:
+// - "configuration_error" (type *loom.ServiceError)
+// - "argo_api_error" (type *loom.ServiceError)
+// - "argo_not_found" (type *loom.ServiceError)
+// - "argo_access_denied" (type *loom.ServiceError)
+// - "argo_request_rejected" (type *loom.ServiceError)
+// - "invalid_input" (type *loom.ServiceError)
+// - "invalid_state" (type *loom.ServiceError)
+// - "namespace_denied" (type *loom.ServiceError)
+// - "confirmation_invalid" (type *loom.ServiceError)
+// - error: internal error
+func (c *Client) GetWorkflowArtifacts(ctx context.Context, p *GetWorkflowArtifactsPayload) (res *WorkflowArtifactsResult, err error) {
+	var ires any
+	ires, err = c.GetWorkflowArtifactsEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*WorkflowArtifactsResult), nil
+}
+
+// LintWorkflow calls the "LintWorkflow" endpoint of the "argo" service.
+// LintWorkflow may return the following errors:
+// - "configuration_error" (type *loom.ServiceError)
+// - "argo_api_error" (type *loom.ServiceError)
+// - "argo_not_found" (type *loom.ServiceError)
+// - "argo_access_denied" (type *loom.ServiceError)
+// - "argo_request_rejected" (type *loom.ServiceError)
+// - "invalid_input" (type *loom.ServiceError)
+// - "invalid_state" (type *loom.ServiceError)
+// - "namespace_denied" (type *loom.ServiceError)
+// - "confirmation_invalid" (type *loom.ServiceError)
+// - error: internal error
+func (c *Client) LintWorkflow(ctx context.Context, p *LintWorkflowPayload) (res *LintResult, err error) {
+	var ires any
+	ires, err = c.LintWorkflowEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*LintResult), nil
+}
+
+// LintWorkflowTemplate calls the "LintWorkflowTemplate" endpoint of the "argo"
+// service.
+// LintWorkflowTemplate may return the following errors:
+// - "configuration_error" (type *loom.ServiceError)
+// - "argo_api_error" (type *loom.ServiceError)
+// - "argo_not_found" (type *loom.ServiceError)
+// - "argo_access_denied" (type *loom.ServiceError)
+// - "argo_request_rejected" (type *loom.ServiceError)
+// - "invalid_input" (type *loom.ServiceError)
+// - "invalid_state" (type *loom.ServiceError)
+// - "namespace_denied" (type *loom.ServiceError)
+// - "confirmation_invalid" (type *loom.ServiceError)
+// - error: internal error
+func (c *Client) LintWorkflowTemplate(ctx context.Context, p *LintWorkflowTemplatePayload) (res *LintResult, err error) {
+	var ires any
+	ires, err = c.LintWorkflowTemplateEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*LintResult), nil
+}
+
+// SubmitWorkflowTemplate calls the "SubmitWorkflowTemplate" endpoint of the
+// "argo" service.
+// SubmitWorkflowTemplate may return the following errors:
+// - "configuration_error" (type *loom.ServiceError)
+// - "argo_api_error" (type *loom.ServiceError)
+// - "argo_not_found" (type *loom.ServiceError)
+// - "argo_access_denied" (type *loom.ServiceError)
+// - "argo_request_rejected" (type *loom.ServiceError)
+// - "invalid_input" (type *loom.ServiceError)
+// - "invalid_state" (type *loom.ServiceError)
+// - "namespace_denied" (type *loom.ServiceError)
+// - "confirmation_invalid" (type *loom.ServiceError)
+// - error: internal error
+func (c *Client) SubmitWorkflowTemplate(ctx context.Context, p *SubmitWorkflowTemplatePayload) (res *CreatedWorkflowResult, err error) {
+	var ires any
+	ires, err = c.SubmitWorkflowTemplateEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*CreatedWorkflowResult), nil
+}
+
+// SuspendWorkflow calls the "SuspendWorkflow" endpoint of the "argo" service.
+// SuspendWorkflow may return the following errors:
+// - "configuration_error" (type *loom.ServiceError)
+// - "argo_api_error" (type *loom.ServiceError)
+// - "argo_not_found" (type *loom.ServiceError)
+// - "argo_access_denied" (type *loom.ServiceError)
+// - "argo_request_rejected" (type *loom.ServiceError)
+// - "invalid_input" (type *loom.ServiceError)
+// - "invalid_state" (type *loom.ServiceError)
+// - "namespace_denied" (type *loom.ServiceError)
+// - "confirmation_invalid" (type *loom.ServiceError)
+// - error: internal error
+func (c *Client) SuspendWorkflow(ctx context.Context, p *SuspendWorkflowPayload) (res *ActionResult, err error) {
+	var ires any
+	ires, err = c.SuspendWorkflowEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*ActionResult), nil
+}
+
+// ResumeWorkflow calls the "ResumeWorkflow" endpoint of the "argo" service.
+// ResumeWorkflow may return the following errors:
+// - "configuration_error" (type *loom.ServiceError)
+// - "argo_api_error" (type *loom.ServiceError)
+// - "argo_not_found" (type *loom.ServiceError)
+// - "argo_access_denied" (type *loom.ServiceError)
+// - "argo_request_rejected" (type *loom.ServiceError)
+// - "invalid_input" (type *loom.ServiceError)
+// - "invalid_state" (type *loom.ServiceError)
+// - "namespace_denied" (type *loom.ServiceError)
+// - "confirmation_invalid" (type *loom.ServiceError)
+// - error: internal error
+func (c *Client) ResumeWorkflow(ctx context.Context, p *ResumeWorkflowPayload) (res *ActionResult, err error) {
+	var ires any
+	ires, err = c.ResumeWorkflowEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*ActionResult), nil
+}
+
+// ResubmitWorkflow calls the "ResubmitWorkflow" endpoint of the "argo" service.
+// ResubmitWorkflow may return the following errors:
+// - "configuration_error" (type *loom.ServiceError)
+// - "argo_api_error" (type *loom.ServiceError)
+// - "argo_not_found" (type *loom.ServiceError)
+// - "argo_access_denied" (type *loom.ServiceError)
+// - "argo_request_rejected" (type *loom.ServiceError)
+// - "invalid_input" (type *loom.ServiceError)
+// - "invalid_state" (type *loom.ServiceError)
+// - "namespace_denied" (type *loom.ServiceError)
+// - "confirmation_invalid" (type *loom.ServiceError)
+// - error: internal error
+func (c *Client) ResubmitWorkflow(ctx context.Context, p *ResubmitWorkflowPayload) (res *CreatedWorkflowResult, err error) {
+	var ires any
+	ires, err = c.ResubmitWorkflowEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*CreatedWorkflowResult), nil
+}
+
+// TriggerCronWorkflow calls the "TriggerCronWorkflow" endpoint of the "argo"
+// service.
+// TriggerCronWorkflow may return the following errors:
+// - "configuration_error" (type *loom.ServiceError)
+// - "argo_api_error" (type *loom.ServiceError)
+// - "argo_not_found" (type *loom.ServiceError)
+// - "argo_access_denied" (type *loom.ServiceError)
+// - "argo_request_rejected" (type *loom.ServiceError)
+// - "invalid_input" (type *loom.ServiceError)
+// - "invalid_state" (type *loom.ServiceError)
+// - "namespace_denied" (type *loom.ServiceError)
+// - "confirmation_invalid" (type *loom.ServiceError)
+// - error: internal error
+func (c *Client) TriggerCronWorkflow(ctx context.Context, p *TriggerCronWorkflowPayload) (res *CreatedWorkflowResult, err error) {
+	var ires any
+	ires, err = c.TriggerCronWorkflowEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*CreatedWorkflowResult), nil
 }

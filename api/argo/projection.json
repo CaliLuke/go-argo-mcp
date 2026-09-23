@@ -8,6 +8,7 @@
       "fields": [
         {"source": "name", "name": "Name", "goType": "string", "json": "name", "schema": "string"},
         {"source": "namespace", "name": "Namespace", "goType": "string", "json": "namespace", "schema": "string"},
+        {"source": "uid", "name": "UID", "goType": "string", "json": "uid", "schema": "string"},
         {"source": "labels", "name": "Labels", "goType": "map[string]string", "json": "labels", "schema": "map:string"},
         {"source": "annotations", "name": "Annotations", "goType": "map[string]string", "json": "annotations", "schema": "map:string"}
       ]
@@ -17,6 +18,19 @@
       "name": "ListMeta",
       "fields": [
         {"source": "continue", "name": "Continue", "goType": "string", "json": "continue", "schema": "string"}
+      ]
+    },
+    {
+      "source": "io.k8s.api.core.v1.Event",
+      "name": "Event",
+      "fields": [
+        {"source": "type", "name": "Type", "goType": "string", "json": "type", "schema": "string"},
+        {"source": "reason", "name": "Reason", "goType": "string", "json": "reason", "schema": "string"},
+        {"source": "message", "name": "Message", "goType": "string", "json": "message", "schema": "string"},
+        {"source": "count", "name": "Count", "goType": "int", "json": "count", "schema": "integer"},
+        {"source": "firstTimestamp", "name": "FirstTimestamp", "goType": "string", "json": "firstTimestamp", "schema": "ref:io.k8s.apimachinery.pkg.apis.meta.v1.Time", "compatibilityOverride": "Decode Kubernetes time as its JSON string."},
+        {"source": "lastTimestamp", "name": "LastTimestamp", "goType": "string", "json": "lastTimestamp", "schema": "ref:io.k8s.apimachinery.pkg.apis.meta.v1.Time", "compatibilityOverride": "Decode Kubernetes time as its JSON string."},
+        {"source": "eventTime", "name": "EventTime", "goType": "string", "json": "eventTime", "schema": "ref:io.k8s.apimachinery.pkg.apis.meta.v1.MicroTime", "compatibilityOverride": "Decode Kubernetes microtime as its JSON string."}
       ]
     },
     {
@@ -37,10 +51,46 @@
       ]
     },
     {
+      "source": "io.argoproj.workflow.v1alpha1.Artifact",
+      "name": "Artifact",
+      "fields": [
+        {"source": "name", "name": "Name", "goType": "string", "json": "name", "schema": "string"},
+        {"source": "path", "name": "Path", "goType": "string", "json": "path", "schema": "string"},
+        {"source": "optional", "name": "Optional", "goType": "bool", "json": "optional", "schema": "boolean"}
+      ]
+    },
+    {
+      "source": "io.argoproj.workflow.v1alpha1.Inputs",
+      "name": "Inputs",
+      "fields": [
+        {"source": "artifacts", "name": "Artifacts", "goType": "[]Artifact", "json": "artifacts", "schema": "array:ref:io.argoproj.workflow.v1alpha1.Artifact"}
+      ]
+    },
+    {
       "source": "io.argoproj.workflow.v1alpha1.Outputs",
       "name": "Outputs",
       "fields": [
-        {"source": "parameters", "name": "Parameters", "goType": "[]Parameter", "json": "parameters", "schema": "array:ref:io.argoproj.workflow.v1alpha1.Parameter"}
+        {"source": "parameters", "name": "Parameters", "goType": "[]Parameter", "json": "parameters", "schema": "array:ref:io.argoproj.workflow.v1alpha1.Parameter"},
+        {"source": "artifacts", "name": "Artifacts", "goType": "[]Artifact", "json": "artifacts", "schema": "array:ref:io.argoproj.workflow.v1alpha1.Artifact"}
+      ]
+    },
+    {
+      "source": "io.argoproj.workflow.v1alpha1.NodeStatus",
+      "name": "NodeStatus",
+      "fields": [
+        {"source": "id", "name": "ID", "goType": "string", "json": "id", "schema": "string"},
+        {"source": "name", "name": "Name", "goType": "string", "json": "name", "schema": "string"},
+        {"source": "displayName", "name": "DisplayName", "goType": "string", "json": "displayName", "schema": "string"},
+        {"source": "type", "name": "Type", "goType": "string", "json": "type", "schema": "string"},
+        {"source": "phase", "name": "Phase", "goType": "string", "json": "phase", "schema": "string"},
+        {"source": "templateName", "name": "TemplateName", "goType": "string", "json": "templateName", "schema": "string"},
+        {"source": "boundaryID", "name": "BoundaryID", "goType": "string", "json": "boundaryID", "schema": "string"},
+        {"source": "children", "name": "Children", "goType": "[]string", "json": "children", "schema": "array:string"},
+        {"source": "startedAt", "name": "StartedAt", "goType": "string", "json": "startedAt", "schema": "ref:io.k8s.apimachinery.pkg.apis.meta.v1.Time", "compatibilityOverride": "Decode Kubernetes time as its JSON string."},
+        {"source": "finishedAt", "name": "FinishedAt", "goType": "string", "json": "finishedAt", "schema": "ref:io.k8s.apimachinery.pkg.apis.meta.v1.Time", "compatibilityOverride": "Decode Kubernetes time as its JSON string."},
+        {"source": "message", "name": "Message", "goType": "string", "json": "message", "schema": "string"},
+        {"source": "inputs", "name": "Inputs", "goType": "Inputs", "json": "inputs", "schema": "ref:io.argoproj.workflow.v1alpha1.Inputs"},
+        {"source": "outputs", "name": "Outputs", "goType": "Outputs", "json": "outputs", "schema": "ref:io.argoproj.workflow.v1alpha1.Outputs"}
       ]
     },
     {
@@ -68,6 +118,7 @@
         {"source": "startedAt", "name": "StartedAt", "goType": "string", "json": "startedAt", "schema": "ref:io.k8s.apimachinery.pkg.apis.meta.v1.Time", "compatibilityOverride": "Decode Kubernetes time's JSON string representation without a Kubernetes dependency."},
         {"source": "finishedAt", "name": "FinishedAt", "goType": "string", "json": "finishedAt", "schema": "ref:io.k8s.apimachinery.pkg.apis.meta.v1.Time", "compatibilityOverride": "Decode Kubernetes time's JSON string representation without a Kubernetes dependency."},
         {"source": "message", "name": "Message", "goType": "string", "json": "message", "schema": "string"},
+        {"source": "nodes", "name": "Nodes", "goType": "map[string]NodeStatus", "json": "nodes", "schema": "map:ref:io.argoproj.workflow.v1alpha1.NodeStatus"},
         {"source": "outputs", "name": "Outputs", "goType": "Outputs", "json": "outputs", "schema": "ref:io.argoproj.workflow.v1alpha1.Outputs"}
       ]
     },
@@ -153,6 +204,72 @@
       "fields": [
         {"source": "metadata", "name": "Metadata", "goType": "ListMeta", "json": "metadata", "schema": "ref:io.k8s.apimachinery.pkg.apis.meta.v1.ListMeta"},
         {"source": "items", "name": "Items", "goType": "[]ClusterWorkflowTemplate", "json": "items", "schema": "array:ref:io.argoproj.workflow.v1alpha1.ClusterWorkflowTemplate"}
+      ]
+    },
+    {
+      "source": "io.argoproj.workflow.v1alpha1.SubmitOpts",
+      "name": "SubmitOpts",
+      "fields": [
+        {"source": "parameters", "name": "Parameters", "goType": "[]string", "json": "parameters", "schema": "array:string"}
+      ]
+    },
+    {
+      "source": "io.argoproj.workflow.v1alpha1.WorkflowSubmitRequest",
+      "name": "WorkflowSubmitRequest",
+      "fields": [
+        {"source": "namespace", "name": "Namespace", "goType": "string", "json": "namespace", "schema": "string", "omitEmpty": false},
+        {"source": "resourceKind", "name": "ResourceKind", "goType": "string", "json": "resourceKind", "schema": "string", "omitEmpty": false},
+        {"source": "resourceName", "name": "ResourceName", "goType": "string", "json": "resourceName", "schema": "string", "omitEmpty": false},
+        {"source": "submitOptions", "name": "SubmitOptions", "goType": "SubmitOpts", "json": "submitOptions", "schema": "ref:io.argoproj.workflow.v1alpha1.SubmitOpts", "omitEmpty": false}
+      ]
+    },
+    {
+      "source": "io.argoproj.workflow.v1alpha1.WorkflowResubmitRequest",
+      "name": "WorkflowResubmitRequest",
+      "fields": [
+        {"source": "name", "name": "Name", "goType": "string", "json": "name", "schema": "string", "omitEmpty": false},
+        {"source": "namespace", "name": "Namespace", "goType": "string", "json": "namespace", "schema": "string", "omitEmpty": false},
+        {"source": "memoized", "name": "Memoized", "goType": "bool", "json": "memoized", "schema": "boolean", "omitEmpty": false},
+        {"source": "parameters", "name": "Parameters", "goType": "[]string", "json": "parameters", "schema": "array:string", "omitEmpty": false}
+      ]
+    },
+    {
+      "source": "io.argoproj.workflow.v1alpha1.WorkflowSuspendRequest",
+      "name": "WorkflowSuspendRequest",
+      "fields": [
+        {"source": "name", "name": "Name", "goType": "string", "json": "name", "schema": "string", "omitEmpty": false},
+        {"source": "namespace", "name": "Namespace", "goType": "string", "json": "namespace", "schema": "string", "omitEmpty": false}
+      ]
+    },
+    {
+      "source": "io.argoproj.workflow.v1alpha1.WorkflowResumeRequest",
+      "name": "WorkflowResumeRequest",
+      "fields": [
+        {"source": "name", "name": "Name", "goType": "string", "json": "name", "schema": "string", "omitEmpty": false},
+        {"source": "namespace", "name": "Namespace", "goType": "string", "json": "namespace", "schema": "string", "omitEmpty": false}
+      ]
+    },
+    {
+      "source": "io.argoproj.workflow.v1alpha1.WorkflowLintRequest",
+      "name": "WorkflowLintRequest",
+      "fields": [
+        {"source": "namespace", "name": "Namespace", "goType": "string", "json": "namespace", "schema": "string", "omitEmpty": false},
+        {"source": "workflow", "name": "Workflow", "goType": "json.RawMessage", "json": "workflow", "schema": "ref:io.argoproj.workflow.v1alpha1.Workflow", "compatibilityOverride": "Opaque validated manifest preserves all fields.", "omitEmpty": false}
+      ]
+    },
+    {
+      "source": "io.argoproj.workflow.v1alpha1.WorkflowTemplateLintRequest",
+      "name": "WorkflowTemplateLintRequest",
+      "fields": [
+        {"source": "namespace", "name": "Namespace", "goType": "string", "json": "namespace", "schema": "string", "omitEmpty": false},
+        {"source": "template", "name": "Template", "goType": "json.RawMessage", "json": "template", "schema": "ref:io.argoproj.workflow.v1alpha1.WorkflowTemplate", "compatibilityOverride": "Opaque validated manifest preserves all fields.", "omitEmpty": false}
+      ]
+    },
+    {
+      "source": "io.argoproj.workflow.v1alpha1.ClusterWorkflowTemplateLintRequest",
+      "name": "ClusterWorkflowTemplateLintRequest",
+      "fields": [
+        {"source": "template", "name": "Template", "goType": "json.RawMessage", "json": "template", "schema": "ref:io.argoproj.workflow.v1alpha1.ClusterWorkflowTemplate", "compatibilityOverride": "Opaque validated manifest preserves all fields.", "omitEmpty": false}
       ]
     },
     {

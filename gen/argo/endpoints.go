@@ -28,6 +28,18 @@ type Endpoints struct {
 	GetWorkflowTemplate          loom.Endpoint
 	ListClusterWorkflowTemplates loom.Endpoint
 	GetClusterWorkflowTemplate   loom.Endpoint
+	GetWorkflowNodes             loom.Endpoint
+	GetWorkflowEvents            loom.Endpoint
+	ListArchivedWorkflows        loom.Endpoint
+	GetArchivedWorkflow          loom.Endpoint
+	GetWorkflowArtifacts         loom.Endpoint
+	LintWorkflow                 loom.Endpoint
+	LintWorkflowTemplate         loom.Endpoint
+	SubmitWorkflowTemplate       loom.Endpoint
+	SuspendWorkflow              loom.Endpoint
+	ResumeWorkflow               loom.Endpoint
+	ResubmitWorkflow             loom.Endpoint
+	TriggerCronWorkflow          loom.Endpoint
 }
 
 // NewEndpoints wraps the methods of the "argo" service with endpoints.
@@ -46,6 +58,18 @@ func NewEndpoints(s Service) *Endpoints {
 		GetWorkflowTemplate:          NewGetWorkflowTemplateEndpoint(s),
 		ListClusterWorkflowTemplates: NewListClusterWorkflowTemplatesEndpoint(s),
 		GetClusterWorkflowTemplate:   NewGetClusterWorkflowTemplateEndpoint(s),
+		GetWorkflowNodes:             NewGetWorkflowNodesEndpoint(s),
+		GetWorkflowEvents:            NewGetWorkflowEventsEndpoint(s),
+		ListArchivedWorkflows:        NewListArchivedWorkflowsEndpoint(s),
+		GetArchivedWorkflow:          NewGetArchivedWorkflowEndpoint(s),
+		GetWorkflowArtifacts:         NewGetWorkflowArtifactsEndpoint(s),
+		LintWorkflow:                 NewLintWorkflowEndpoint(s),
+		LintWorkflowTemplate:         NewLintWorkflowTemplateEndpoint(s),
+		SubmitWorkflowTemplate:       NewSubmitWorkflowTemplateEndpoint(s),
+		SuspendWorkflow:              NewSuspendWorkflowEndpoint(s),
+		ResumeWorkflow:               NewResumeWorkflowEndpoint(s),
+		ResubmitWorkflow:             NewResubmitWorkflowEndpoint(s),
+		TriggerCronWorkflow:          NewTriggerCronWorkflowEndpoint(s),
 	}
 }
 
@@ -64,6 +88,18 @@ func (e *Endpoints) Use(m func(loom.Endpoint) loom.Endpoint) {
 	e.GetWorkflowTemplate = m(e.GetWorkflowTemplate)
 	e.ListClusterWorkflowTemplates = m(e.ListClusterWorkflowTemplates)
 	e.GetClusterWorkflowTemplate = m(e.GetClusterWorkflowTemplate)
+	e.GetWorkflowNodes = m(e.GetWorkflowNodes)
+	e.GetWorkflowEvents = m(e.GetWorkflowEvents)
+	e.ListArchivedWorkflows = m(e.ListArchivedWorkflows)
+	e.GetArchivedWorkflow = m(e.GetArchivedWorkflow)
+	e.GetWorkflowArtifacts = m(e.GetWorkflowArtifacts)
+	e.LintWorkflow = m(e.LintWorkflow)
+	e.LintWorkflowTemplate = m(e.LintWorkflowTemplate)
+	e.SubmitWorkflowTemplate = m(e.SubmitWorkflowTemplate)
+	e.SuspendWorkflow = m(e.SuspendWorkflow)
+	e.ResumeWorkflow = m(e.ResumeWorkflow)
+	e.ResubmitWorkflow = m(e.ResubmitWorkflow)
+	e.TriggerCronWorkflow = m(e.TriggerCronWorkflow)
 }
 
 // NewListWorkflowsEndpoint returns an endpoint function that calls the method
@@ -180,5 +216,113 @@ func NewGetClusterWorkflowTemplateEndpoint(s Service) loom.Endpoint {
 	return func(ctx context.Context, req any) (any, error) {
 		p := req.(*GetClusterWorkflowTemplatePayload)
 		return s.GetClusterWorkflowTemplate(ctx, p)
+	}
+}
+
+// NewGetWorkflowNodesEndpoint returns an endpoint function that calls the
+// method "GetWorkflowNodes" of service "argo".
+func NewGetWorkflowNodesEndpoint(s Service) loom.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*GetWorkflowNodesPayload)
+		return s.GetWorkflowNodes(ctx, p)
+	}
+}
+
+// NewGetWorkflowEventsEndpoint returns an endpoint function that calls the
+// method "GetWorkflowEvents" of service "argo".
+func NewGetWorkflowEventsEndpoint(s Service) loom.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*GetWorkflowEventsPayload)
+		return s.GetWorkflowEvents(ctx, p)
+	}
+}
+
+// NewListArchivedWorkflowsEndpoint returns an endpoint function that calls the
+// method "ListArchivedWorkflows" of service "argo".
+func NewListArchivedWorkflowsEndpoint(s Service) loom.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*ListArchivedWorkflowsPayload)
+		return s.ListArchivedWorkflows(ctx, p)
+	}
+}
+
+// NewGetArchivedWorkflowEndpoint returns an endpoint function that calls the
+// method "GetArchivedWorkflow" of service "argo".
+func NewGetArchivedWorkflowEndpoint(s Service) loom.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*GetArchivedWorkflowPayload)
+		return s.GetArchivedWorkflow(ctx, p)
+	}
+}
+
+// NewGetWorkflowArtifactsEndpoint returns an endpoint function that calls the
+// method "GetWorkflowArtifacts" of service "argo".
+func NewGetWorkflowArtifactsEndpoint(s Service) loom.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*GetWorkflowArtifactsPayload)
+		return s.GetWorkflowArtifacts(ctx, p)
+	}
+}
+
+// NewLintWorkflowEndpoint returns an endpoint function that calls the method
+// "LintWorkflow" of service "argo".
+func NewLintWorkflowEndpoint(s Service) loom.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*LintWorkflowPayload)
+		return s.LintWorkflow(ctx, p)
+	}
+}
+
+// NewLintWorkflowTemplateEndpoint returns an endpoint function that calls the
+// method "LintWorkflowTemplate" of service "argo".
+func NewLintWorkflowTemplateEndpoint(s Service) loom.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*LintWorkflowTemplatePayload)
+		return s.LintWorkflowTemplate(ctx, p)
+	}
+}
+
+// NewSubmitWorkflowTemplateEndpoint returns an endpoint function that calls
+// the method "SubmitWorkflowTemplate" of service "argo".
+func NewSubmitWorkflowTemplateEndpoint(s Service) loom.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*SubmitWorkflowTemplatePayload)
+		return s.SubmitWorkflowTemplate(ctx, p)
+	}
+}
+
+// NewSuspendWorkflowEndpoint returns an endpoint function that calls the
+// method "SuspendWorkflow" of service "argo".
+func NewSuspendWorkflowEndpoint(s Service) loom.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*SuspendWorkflowPayload)
+		return s.SuspendWorkflow(ctx, p)
+	}
+}
+
+// NewResumeWorkflowEndpoint returns an endpoint function that calls the method
+// "ResumeWorkflow" of service "argo".
+func NewResumeWorkflowEndpoint(s Service) loom.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*ResumeWorkflowPayload)
+		return s.ResumeWorkflow(ctx, p)
+	}
+}
+
+// NewResubmitWorkflowEndpoint returns an endpoint function that calls the
+// method "ResubmitWorkflow" of service "argo".
+func NewResubmitWorkflowEndpoint(s Service) loom.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*ResubmitWorkflowPayload)
+		return s.ResubmitWorkflow(ctx, p)
+	}
+}
+
+// NewTriggerCronWorkflowEndpoint returns an endpoint function that calls the
+// method "TriggerCronWorkflow" of service "argo".
+func NewTriggerCronWorkflowEndpoint(s Service) loom.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*TriggerCronWorkflowPayload)
+		return s.TriggerCronWorkflow(ctx, p)
 	}
 }

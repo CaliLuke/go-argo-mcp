@@ -2,27 +2,54 @@
 
 A lightweight Go MCP server for connecting AI tools to [Argo Workflows](https://argo-workflows.readthedocs.io/). It uses Loom and Loom-MCP to expose typed stdio, stateful Streamable HTTP, and stateless Streamable HTTP transports with environment-only configuration.
 
-The server is read-only by default. Mutation and destructive tools require explicit environment flags, namespace policy is enforced before Argo calls, and workflow termination can require a scoped one-time confirmation token.
+The server is read-only by default. Mutation and destructive tools require explicit environment flags. Namespace policy applies before each Argo call. Workflow retry and termination can require a scoped, one-time confirmation token.
 
 ## Tools
 
-| Area | Tools |
-| --- | --- |
-| Workflows | `list_workflows`, `get_workflow`, `get_workflow_logs`, `retry_workflow`, `terminate_workflow` |
-| CronWorkflows | `list_cron_workflows`, `get_cron_workflow`, `get_cron_history`, `toggle_cron_suspension` |
-| WorkflowTemplates | `list_workflow_templates`, `get_workflow_template` |
-| ClusterWorkflowTemplates | `list_cluster_workflow_templates`, `get_cluster_workflow_template` |
+The table is the complete tool catalog. The integration test computes its total from the generated SDK catalog and checks every row.
 
-All 13 tools call real Argo HTTP endpoints. There are no mock fallbacks.
+<!-- tool-catalog:start -->
+
+| Area | Tool | Purpose | readOnlyHint | destructiveHint | idempotentHint | Required access |
+| --- | --- | --- | --- | --- | --- | --- |
+| Workflows | `list_workflows` | List workflows with filters and cursor pagination | true | false | n/a | `none` |
+| Workflows | `get_workflow` | Get compact workflow details | true | false | n/a | `none` |
+| Workflows | `get_workflow_logs` | Get bounded workflow logs | true | false | n/a | `none` |
+| Workflows | `get_workflow_nodes` | Get filtered node summaries with offset pagination | true | false | n/a | `none` |
+| Workflows | `get_workflow_events` | Observe a bounded window of workflow events | true | false | n/a | `none` |
+| Workflows | `get_workflow_artifacts` | Get artifact metadata and trusted Argo download links | true | false | n/a | `none` |
+| Workflows | `suspend_workflow` | Suspend a workflow | false | false | false | `MCP_ALLOW_MUTATIONS` |
+| Workflows | `resume_workflow` | Resume a whole workflow | false | false | false | `MCP_ALLOW_MUTATIONS` |
+| Workflows | `resubmit_workflow` | Create a workflow from an existing workflow | false | false | false | `MCP_ALLOW_MUTATIONS` |
+| Workflows | `retry_workflow` | Preview or retry a workflow | false | true | n/a | `MCP_ALLOW_MUTATIONS+MCP_ALLOW_DESTRUCTIVE` |
+| Workflows | `terminate_workflow` | Preview or terminate a workflow | false | true | n/a | `MCP_ALLOW_MUTATIONS+MCP_ALLOW_DESTRUCTIVE` |
+| CronWorkflows | `list_cron_workflows` | List CronWorkflows with cursor pagination | true | false | n/a | `none` |
+| CronWorkflows | `get_cron_workflow` | Get compact CronWorkflow details | true | false | n/a | `none` |
+| CronWorkflows | `get_cron_history` | List workflow history for a CronWorkflow | true | false | n/a | `none` |
+| CronWorkflows | `toggle_cron_suspension` | Change CronWorkflow suspension | false | false | n/a | `MCP_ALLOW_MUTATIONS` |
+| CronWorkflows | `trigger_cron_workflow` | Create a workflow from a CronWorkflow | false | false | false | `MCP_ALLOW_MUTATIONS` |
+| WorkflowTemplates | `list_workflow_templates` | List WorkflowTemplates with cursor pagination | true | false | n/a | `none` |
+| WorkflowTemplates | `get_workflow_template` | Get compact WorkflowTemplate details | true | false | n/a | `none` |
+| WorkflowTemplates | `submit_workflow_template` | Create a workflow from a template | false | false | false | `MCP_ALLOW_MUTATIONS` |
+| ClusterWorkflowTemplates | `list_cluster_workflow_templates` | List ClusterWorkflowTemplates with cursor pagination | true | false | n/a | `none` |
+| ClusterWorkflowTemplates | `get_cluster_workflow_template` | Get compact ClusterWorkflowTemplate details | true | false | n/a | `none` |
+| Archive | `list_archived_workflows` | List archived workflows with cursor pagination | true | false | n/a | `none` |
+| Archive | `get_archived_workflow` | Get bounded archived workflow details | true | false | n/a | `none` |
+| Validation | `lint_workflow` | Validate a complete Workflow manifest with Argo | true | false | n/a | `none` |
+| Validation | `lint_workflow_template` | Validate a complete workflow template manifest with Argo | true | false | n/a | `none` |
+
+<!-- tool-catalog:end -->
+
+All tools call real Argo HTTP endpoints. There are no mock fallbacks.
 
 CronWorkflow reads include every configured schedule and its timezone. `get_cron_workflow` reports the next nominal run when active; `when` and stop conditions can still prevent that run.
 
 ### Collection pagination
 
-`list_workflows`, `list_cron_workflows`, `list_workflow_templates`, and
-`list_cluster_workflow_templates` return at most 50 items by default.
-`get_cron_history` returns at most 10. All five tools accept `limit` from 1 to
-200 and an optional `continue` token.
+`list_workflows`, `list_cron_workflows`, `list_workflow_templates`,
+`list_cluster_workflow_templates`, and `list_archived_workflows` return at most
+50 items by default. `get_cron_history` returns at most 10. These tools accept
+`limit` from 1 to 200 and an optional `continue` token.
 
 Start with the filters and limit you want:
 
@@ -59,6 +86,66 @@ results contain an empty array, set `has_more` to false, and omit `continue`.
 Expired or rejected tokens return an error; the server does not restart the
 scan. `get_cron_history` sorts each returned result by start time, newest first,
 but pagination does not provide a global ordering guarantee across pages.
+
+`get_workflow_nodes` and `get_workflow_artifacts` use offset pagination. Both
+tools default to `offset: 0` and `limit: 50`. Their maximum limit is 200. Pass
+`next_offset` unchanged to get the next page. An absent `next_offset` means
+that the filtered result is complete. Node children can refer to nodes outside
+the current page.
+
+### Bounded diagnostics
+
+`get_workflow_events` observes the Argo event stream for a short interval. It
+does not query event history. The default interval is two seconds, and the
+allowed range is one to ten seconds. The default event limit is 50, and the
+maximum is 200. The result states whether the limit ended the observation.
+
+Node, archive, artifact, and event results apply field and collection bounds.
+Use `truncated`, `fields_truncated`, and `next_offset` to decide whether to
+request another page or account for shortened fields. Artifact results contain
+metadata and links on the configured Argo server. They do not contain object
+store credentials, signed URLs, or artifact bytes.
+
+Archive tools require the Argo workflow archive and suitable archive RBAC.
+Every archive request includes the authorized namespace. The server rejects an
+archived workflow response from a different namespace.
+
+### Lint and submit
+
+Lint sends one complete JSON object to Argo. Supply that object as the
+`manifest_json` string. Its maximum UTF-8 size is 256 KiB. Lint is read-only,
+although Argo uses a POST endpoint.
+
+```json
+{
+  "name": "lint_workflow",
+  "arguments": {
+    "namespace": "argo-ci",
+    "manifest_json": "{\"apiVersion\":\"argoproj.io/v1alpha1\",\"kind\":\"Workflow\",\"metadata\":{\"generateName\":\"build-\"},\"spec\":{\"entrypoint\":\"main\",\"templates\":[{\"name\":\"main\",\"container\":{\"image\":\"alpine:3.22\",\"command\":[\"echo\"],\"args\":[\"ok\"]}}]}}"
+  }
+}
+```
+
+For `lint_workflow_template`, set `cluster_scope: true` for a
+ClusterWorkflowTemplate. A cluster-scoped manifest must not contain a namespace,
+and the request must omit `namespace`.
+
+Template submission accepts only a template name, scope, namespace, and string
+parameters. It does not accept a service account override or an arbitrary
+submission body.
+
+```json
+{
+  "name": "submit_workflow_template",
+  "arguments": {
+    "namespace": "argo-ci",
+    "template_name": "build-template",
+    "parameters": {
+      "revision": "main"
+    }
+  }
+}
+```
 
 ## Install
 
@@ -218,13 +305,15 @@ Configuration references: [Codex MCP commands](https://learn.chatgpt.com/docs/de
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `MCP_ALLOW_MUTATIONS` | `false` | Enable retry and CronWorkflow suspension changes |
-| `MCP_ALLOW_DESTRUCTIVE` | `false` | Enable workflow termination |
-| `MCP_REQUIRE_CONFIRMATION` | `true` | Require a dry-run token before termination |
+| `MCP_ALLOW_MUTATIONS` | `false` | Enable mutation tools, including retry and termination when their other safeguards pass |
+| `MCP_ALLOW_DESTRUCTIVE` | `false` | Enable retry and termination when mutation access is also enabled |
+| `MCP_REQUIRE_CONFIRMATION` | `true` | Require a scoped dry-run token before retry or termination |
 | `MCP_NAMESPACES_ALLOW` | empty/all | Comma-separated namespace allow list; `*` permits all |
 | `MCP_NAMESPACES_DENY` | empty | Comma-separated deny list; deny takes precedence |
 
-Termination confirmation tokens are cryptographically random, expire after five minutes, are valid once, and are scoped to the exact action, namespace, workflow, and reason.
+Confirmation tokens are cryptographically random and expire after five minutes.
+Each token is valid once. A retry token binds the action, namespace, workflow,
+and `restart_successful` value. A termination token also binds the reason.
 
 ### Audit and observability
 
@@ -237,15 +326,54 @@ Termination confirmation tokens are cryptographically random, expire after five 
 | `OTEL_EXPORTER_OTLP_INSECURE` | `false` | Use insecure OTLP transport |
 | `OTEL_EXPORTER_OTLP_HEADERS` | empty | Comma-separated OTLP headers |
 
-Audit arguments redact keys containing `token`, `password`, or `secret`. Response summaries retain only status, count, namespace, and name; workflow logs and confirmation tokens are not written to the audit file.
+Audit arguments redact keys containing `token`, `password`, or `secret`. Audit
+records replace lint manifests with `REDACTED`. For template submission,
+resubmission, and CronWorkflow triggers, they retain only sorted parameter names
+and the parameter count. They never retain parameter values. Response summaries
+retain only status, count, namespace, and name. Workflow logs and confirmation
+tokens are not written to the audit file.
 
 ## Agent safety model
 
 - Read-only tools work with the defaults.
-- `retry_workflow` and `toggle_cron_suspension` require `MCP_ALLOW_MUTATIONS=true`.
-- `terminate_workflow` additionally requires `MCP_ALLOW_DESTRUCTIVE=true`.
-- With confirmation enabled, call `terminate_workflow` in dry-run mode first, inspect the preview, then repeat the exact action with its one-time token.
+- `toggle_cron_suspension`, `submit_workflow_template`, `suspend_workflow`, `resume_workflow`, `resubmit_workflow`, and `trigger_cron_workflow` require `MCP_ALLOW_MUTATIONS=true`.
+- `retry_workflow` and `terminate_workflow` require both `MCP_ALLOW_MUTATIONS=true` and `MCP_ALLOW_DESTRUCTIVE=true`.
+- `retry_workflow` defaults to preview mode. Only an explicit `dry_run: false` can dispatch the retry.
+- With confirmation enabled, preview a retry or termination first. Inspect the preview, then repeat the exact action with its one-time token.
 - Use `MCP_NAMESPACES_ALLOW` in shared environments so agents cannot select an unintended namespace. Entries in `MCP_NAMESPACES_DENY` always take precedence.
+
+For example, first preview a retry:
+
+```json
+{
+  "name": "retry_workflow",
+  "arguments": {
+    "namespace": "argo-ci",
+    "name": "build-123",
+    "restart_successful": false
+  }
+}
+```
+
+Then copy the returned token into the exact confirmed request:
+
+```json
+{
+  "name": "retry_workflow",
+  "arguments": {
+    "namespace": "argo-ci",
+    "name": "build-123",
+    "restart_successful": false,
+    "dry_run": false,
+    "confirmation_token": "token-from-the-preview"
+  }
+}
+```
+
+When confirmation is disabled, retry still requires both access flags and an
+explicit `dry_run: false`. The server sends each mutation request once. A
+network or server failure after dispatch can have an uncertain outcome. Check
+the workflow state before you retry any mutation.
 
 HTTP startup fails closed. A non-loopback bind requires `ARGO_MCP_AUTH_TOKEN` or the explicit `ARGO_MCP_ALLOW_UNAUTHENTICATED=true` acknowledgement for deployments where a trusted proxy or service mesh authenticates clients. Wildcard binds also require `ARGO_MCP_ALLOWED_HOSTS`.
 
@@ -313,6 +441,7 @@ The test suite includes focused HTTP client tests, confirmation and namespace-po
 - `argo_access_denied`: check Argo credentials and RBAC permissions.
 - `argo_request_rejected`: check the tool inputs and current resource state.
 - `argo_api_error`: a network or server failure may be temporary; retry after checking Argo availability.
+- An error after mutation dispatch can have an uncertain outcome. Check the workflow state before you retry the mutation.
 - `namespace_denied`: choose a namespace permitted by `MCP_NAMESPACES_ALLOW` and not present in `MCP_NAMESPACES_DENY`.
 - TLS hostname failures: set `ARGO_TLS_SERVER_NAME` to the certificate name. Use `ARGO_INSECURE_SKIP_TLS_VERIFY=true` only for an explicitly trusted development endpoint.
 

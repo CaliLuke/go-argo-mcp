@@ -8,12 +8,23 @@ import "encoding/json"
 type ObjectMeta struct {
 	Name        string            `json:"name,omitempty"`
 	Namespace   string            `json:"namespace,omitempty"`
+	UID         string            `json:"uid,omitempty"`
 	Labels      map[string]string `json:"labels,omitempty"`
 	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
 type ListMeta struct {
 	Continue string `json:"continue,omitempty"`
+}
+
+type Event struct {
+	Type           string `json:"type,omitempty"`
+	Reason         string `json:"reason,omitempty"`
+	Message        string `json:"message,omitempty"`
+	Count          int    `json:"count,omitempty"`
+	FirstTimestamp string `json:"firstTimestamp,omitempty"`
+	LastTimestamp  string `json:"lastTimestamp,omitempty"`
+	EventTime      string `json:"eventTime,omitempty"`
 }
 
 type Parameter struct {
@@ -27,8 +38,35 @@ type Arguments struct {
 	Parameters []Parameter `json:"parameters,omitempty"`
 }
 
+type Artifact struct {
+	Name     string `json:"name,omitempty"`
+	Path     string `json:"path,omitempty"`
+	Optional bool   `json:"optional,omitempty"`
+}
+
+type Inputs struct {
+	Artifacts []Artifact `json:"artifacts,omitempty"`
+}
+
 type Outputs struct {
 	Parameters []Parameter `json:"parameters,omitempty"`
+	Artifacts  []Artifact  `json:"artifacts,omitempty"`
+}
+
+type NodeStatus struct {
+	ID           string   `json:"id,omitempty"`
+	Name         string   `json:"name,omitempty"`
+	DisplayName  string   `json:"displayName,omitempty"`
+	Type         string   `json:"type,omitempty"`
+	Phase        string   `json:"phase,omitempty"`
+	TemplateName string   `json:"templateName,omitempty"`
+	BoundaryID   string   `json:"boundaryID,omitempty"`
+	Children     []string `json:"children,omitempty"`
+	StartedAt    string   `json:"startedAt,omitempty"`
+	FinishedAt   string   `json:"finishedAt,omitempty"`
+	Message      string   `json:"message,omitempty"`
+	Inputs       Inputs   `json:"inputs,omitempty"`
+	Outputs      Outputs  `json:"outputs,omitempty"`
 }
 
 type Template struct {
@@ -42,12 +80,13 @@ type WorkflowSpec struct {
 }
 
 type WorkflowStatus struct {
-	Phase      string  `json:"phase,omitempty"`
-	Progress   string  `json:"progress,omitempty"`
-	StartedAt  string  `json:"startedAt,omitempty"`
-	FinishedAt string  `json:"finishedAt,omitempty"`
-	Message    string  `json:"message,omitempty"`
-	Outputs    Outputs `json:"outputs,omitempty"`
+	Phase      string                `json:"phase,omitempty"`
+	Progress   string                `json:"progress,omitempty"`
+	StartedAt  string                `json:"startedAt,omitempty"`
+	FinishedAt string                `json:"finishedAt,omitempty"`
+	Message    string                `json:"message,omitempty"`
+	Nodes      map[string]NodeStatus `json:"nodes,omitempty"`
+	Outputs    Outputs               `json:"outputs,omitempty"`
 }
 
 type Workflow struct {
@@ -102,6 +141,48 @@ type ClusterWorkflowTemplate struct {
 type ClusterWorkflowTemplateList struct {
 	Metadata ListMeta                  `json:"metadata,omitempty"`
 	Items    []ClusterWorkflowTemplate `json:"items,omitempty"`
+}
+
+type SubmitOpts struct {
+	Parameters []string `json:"parameters,omitempty"`
+}
+
+type WorkflowSubmitRequest struct {
+	Namespace     string     `json:"namespace"`
+	ResourceKind  string     `json:"resourceKind"`
+	ResourceName  string     `json:"resourceName"`
+	SubmitOptions SubmitOpts `json:"submitOptions"`
+}
+
+type WorkflowResubmitRequest struct {
+	Name       string   `json:"name"`
+	Namespace  string   `json:"namespace"`
+	Memoized   bool     `json:"memoized"`
+	Parameters []string `json:"parameters"`
+}
+
+type WorkflowSuspendRequest struct {
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+}
+
+type WorkflowResumeRequest struct {
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+}
+
+type WorkflowLintRequest struct {
+	Namespace string          `json:"namespace"`
+	Workflow  json.RawMessage `json:"workflow"`
+}
+
+type WorkflowTemplateLintRequest struct {
+	Namespace string          `json:"namespace"`
+	Template  json.RawMessage `json:"template"`
+}
+
+type ClusterWorkflowTemplateLintRequest struct {
+	Template json.RawMessage `json:"template"`
 }
 
 type WorkflowRetryRequest struct {

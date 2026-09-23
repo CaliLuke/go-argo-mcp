@@ -234,6 +234,7 @@ func TestTerminateWorkflowRequiresScopedOneTimeConfirmation(t *testing.T) {
 	svc := NewArgoService(ArgoServiceConfig{
 		Client: argoapi.New(argoapi.Config{BaseURL: server.URL}),
 		Policy: Policy{
+			AllowMutations:      true,
 			AllowDestructive:    true,
 			RequireConfirmation: true,
 			AllowedNamespaces:   []string{"argo-ci"},

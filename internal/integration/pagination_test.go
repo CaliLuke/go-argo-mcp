@@ -42,6 +42,8 @@ func TestCollectionToolSchemasAndPageSequences(t *testing.T) {
 			item = `{"metadata":{"name":"first","namespace":"argo-ci"},"spec":{"suspend":true}}`
 		case "/api/v1/workflow-templates/argo-ci", "/api/v1/cluster-workflow-templates":
 			item = `{"metadata":{"name":"first","namespace":"argo-ci"},"spec":{"entrypoint":"main"}}`
+		case "/api/v1/archived-workflows":
+			item = `{"metadata":{"name":"first","namespace":"argo-ci","uid":"archive-1"},"status":{"phase":"Succeeded"}}`
 		}
 		if cursor == "empty" {
 			_, _ = w.Write([]byte(`{"items":[]}`))
@@ -84,6 +86,7 @@ func TestCollectionToolSchemasAndPageSequences(t *testing.T) {
 		{"list_workflow_templates", "templates", map[string]any{"namespace": "argo-ci", "label_selector": "team=ci"}, "defaults to 50 when omitted", 50},
 		{"list_cluster_workflow_templates", "templates", map[string]any{"label_selector": "team=ci"}, "defaults to 50 when omitted", 50},
 		{"get_cron_history", "history", map[string]any{"namespace": "argo-ci", "name": "nightly"}, "defaults to 10 when omitted", 10},
+		{"list_archived_workflows", "workflows", map[string]any{"namespace": "argo-ci", "name_prefix": "build-"}, "defaults to 50", 50},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -153,6 +156,20 @@ func TestCollectionToolsRejectExplicitInvalidLimitsBeforeArgo(t *testing.T) {
 	}
 	if argoCalls.Load() != 0 {
 		t.Fatalf("invalid MCP limits made %d Argo requests, including history existence checks", argoCalls.Load())
+	}
+}
+
+func TestArchivedToolRejectsBackendOverReturn(t *testing.T) {
+	argo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"metadata":{"continue":"next"},"items":[{"metadata":{"name":"one","namespace":"argo-ci","uid":"1"}},{"metadata":{"name":"two","namespace":"argo-ci","uid":"2"}}]}`))
+	}))
+	defer argo.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	session := newPaginationSession(t, ctx, argo.URL)
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "list_archived_workflows", Arguments: map[string]any{"limit": 1}})
+	if err != nil || result == nil || !result.IsError {
+		t.Fatalf("over-return result=%#v err=%v", result, err)
 	}
 }
 

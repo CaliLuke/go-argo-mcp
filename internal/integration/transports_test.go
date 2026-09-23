@@ -35,7 +35,7 @@ func TestHTTPTransportsUseProductionBootstrap(t *testing.T) {
 			for attempt := 0; attempt < 2; attempt++ {
 				session := connectHTTP(t, httpServer.URL+"/rpc")
 				listed, err := session.ListTools(testContext(t), nil)
-				if err != nil || len(listed.Tools) != 13 {
+				if err != nil || len(listed.Tools) != 25 {
 					t.Fatalf("ListTools: count=%d err=%v", len(listed.Tools), err)
 				}
 				result, err := session.CallTool(testContext(t), &mcp.CallToolParams{Name: "get_workflow", Arguments: map[string]any{"name": "build-123"}})
@@ -244,9 +244,14 @@ func TestTransportSafetyParity(t *testing.T) {
 				t.Fatalf("explicit null dry_run reached Argo or was accepted: result=%#v err=%v calls=%d", nullDryRun, nullDryRunErr, argoCalls.Load())
 			}
 
-			retry := callTool(t, session, "retry_workflow", map[string]any{"name": "build-123"})
+			retryPreview := callTool(t, session, "retry_workflow", map[string]any{"name": "build-123"})
+			retryToken, _ := structuredMap(t, retryPreview)["confirmation_token"].(string)
+			if retryPreview.IsError || structuredStatus(t, retryPreview) != "dry_run" || retryToken == "" || argoCalls.Load() != before {
+				t.Fatalf("retry preview failed: result=%#v calls=%d", retryPreview, argoCalls.Load())
+			}
+			retry := callTool(t, session, "retry_workflow", map[string]any{"name": "build-123", "dry_run": false, "confirmation_token": retryToken})
 			if retry.IsError || structuredStatus(t, retry) != "ok" || argoCalls.Load() != before+1 {
-				t.Fatalf("allowed mutation failed: result=%#v calls=%d", retry, argoCalls.Load())
+				t.Fatalf("confirmed retry failed: result=%#v calls=%d", retry, argoCalls.Load())
 			}
 
 			preview := callTool(t, session, "terminate_workflow", map[string]any{"name": "build-123", "reason": "cleanup"})
@@ -627,7 +632,7 @@ func connectChild(t *testing.T, child *stdioChild) *mcp.ClientSession {
 func assertChildRead(t *testing.T, session *mcp.ClientSession) {
 	t.Helper()
 	listed, err := session.ListTools(testContext(t), nil)
-	if err != nil || len(listed.Tools) != 13 {
+	if err != nil || len(listed.Tools) != 25 {
 		t.Fatalf("ListTools: count=%d err=%v", len(listed.Tools), err)
 	}
 	result, err := session.CallTool(testContext(t), &mcp.CallToolParams{Name: "get_workflow", Arguments: map[string]any{"name": "build-123"}})

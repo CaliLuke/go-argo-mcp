@@ -25,7 +25,8 @@ type Service interface {
 	// Preview or terminate a running workflow when destructive operations are
 	// enabled.
 	TerminateWorkflow(context.Context, *TerminateWorkflowPayload) (res *ActionResult, err error)
-	// Retry a workflow when mutation operations are enabled.
+	// Preview or retry a workflow when mutation and destructive operations are
+	// enabled.
 	RetryWorkflow(context.Context, *RetryWorkflowPayload) (res *ActionResult, err error)
 	// List CronWorkflows in one namespace.
 	ListCronWorkflows(context.Context, *ListCronWorkflowsPayload) (res *ListCronWorkflowsResult, err error)
@@ -43,6 +44,33 @@ type Service interface {
 	ListClusterWorkflowTemplates(context.Context, *ListClusterWorkflowTemplatesPayload) (res *ListClusterWorkflowTemplatesResult, err error)
 	// Get one ClusterWorkflowTemplate's entrypoint and template names.
 	GetClusterWorkflowTemplate(context.Context, *GetClusterWorkflowTemplatePayload) (res *ClusterWorkflowTemplateDetailResult, err error)
+	// Get a bounded page of nodes from one hydrated workflow.
+	GetWorkflowNodes(context.Context, *GetWorkflowNodesPayload) (res *WorkflowNodesResult, err error)
+	// Observe workflow-related Kubernetes events during a bounded live window;
+	// this is not historical event listing.
+	GetWorkflowEvents(context.Context, *GetWorkflowEventsPayload) (res *WorkflowEventsResult, err error)
+	// List archived workflows in one authorized namespace.
+	ListArchivedWorkflows(context.Context, *ListArchivedWorkflowsPayload) (res *ListArchivedWorkflowsResult, err error)
+	// Get compact details for one archived workflow in an authorized namespace.
+	GetArchivedWorkflow(context.Context, *GetArchivedWorkflowPayload) (res *ArchivedWorkflowDetailResult, err error)
+	// Get bounded artifact metadata and safe Argo download links; binary retrieval
+	// is deferred.
+	GetWorkflowArtifacts(context.Context, *GetWorkflowArtifactsPayload) (res *WorkflowArtifactsResult, err error)
+	// Validate a complete opaque Workflow manifest with Argo without creating it.
+	LintWorkflow(context.Context, *LintWorkflowPayload) (res *LintResult, err error)
+	// Validate a complete opaque namespaced or cluster WorkflowTemplate manifest
+	// with Argo.
+	LintWorkflowTemplate(context.Context, *LintWorkflowTemplatePayload) (res *LintResult, err error)
+	// Submit a WorkflowTemplate or ClusterWorkflowTemplate as a new workflow.
+	SubmitWorkflowTemplate(context.Context, *SubmitWorkflowTemplatePayload) (res *CreatedWorkflowResult, err error)
+	// Suspend a workflow.
+	SuspendWorkflow(context.Context, *SuspendWorkflowPayload) (res *ActionResult, err error)
+	// Resume a whole suspended workflow.
+	ResumeWorkflow(context.Context, *ResumeWorkflowPayload) (res *ActionResult, err error)
+	// Resubmit a workflow as a new workflow.
+	ResubmitWorkflow(context.Context, *ResubmitWorkflowPayload) (res *CreatedWorkflowResult, err error)
+	// Trigger a CronWorkflow immediately as a new workflow.
+	TriggerCronWorkflow(context.Context, *TriggerCronWorkflowPayload) (res *CreatedWorkflowResult, err error)
 }
 
 // APIName is the name of the API as defined in the design.
@@ -59,7 +87,7 @@ const ServiceName = "argo"
 // MethodNames lists the service method names as defined in the design. These
 // are the same values that are set in the endpoint request contexts under the
 // MethodKey key.
-var MethodNames = [13]string{"ListWorkflows", "GetWorkflow", "GetWorkflowLogs", "TerminateWorkflow", "RetryWorkflow", "ListCronWorkflows", "GetCronWorkflow", "GetCronHistory", "ToggleCronSuspension", "ListWorkflowTemplates", "GetWorkflowTemplate", "ListClusterWorkflowTemplates", "GetClusterWorkflowTemplate"}
+var MethodNames = [25]string{"ListWorkflows", "GetWorkflow", "GetWorkflowLogs", "TerminateWorkflow", "RetryWorkflow", "ListCronWorkflows", "GetCronWorkflow", "GetCronHistory", "ToggleCronSuspension", "ListWorkflowTemplates", "GetWorkflowTemplate", "ListClusterWorkflowTemplates", "GetClusterWorkflowTemplate", "GetWorkflowNodes", "GetWorkflowEvents", "ListArchivedWorkflows", "GetArchivedWorkflow", "GetWorkflowArtifacts", "LintWorkflow", "LintWorkflowTemplate", "SubmitWorkflowTemplate", "SuspendWorkflow", "ResumeWorkflow", "ResubmitWorkflow", "TriggerCronWorkflow"}
 
 // ActionResult is the result type of the argo service TerminateWorkflow method.
 type ActionResult struct {
@@ -83,6 +111,50 @@ type ActionResult struct {
 	RestartSuccessful *bool `json:"restart_successful,omitempty"`
 }
 
+// ArchivedWorkflowDetailResult is the result type of the argo service
+// GetArchivedWorkflow method.
+type ArchivedWorkflowDetailResult struct {
+	// Archive UID
+	UID string `json:"uid"`
+	// Workflow name
+	Name string `json:"name"`
+	// Kubernetes namespace
+	Namespace string `json:"namespace"`
+	// Workflow phase
+	Status string `json:"status"`
+	// RFC3339 start timestamp
+	StartedAt *string `json:"started_at,omitempty"`
+	// RFC3339 finish timestamp
+	FinishedAt *string `json:"finished_at,omitempty"`
+	// Diagnostic message
+	Message *string `json:"message,omitempty"`
+	// Selected labels
+	Labels map[string]string `json:"labels"`
+	// Selected annotations
+	Annotations map[string]string `json:"annotations"`
+	// Selected input parameters
+	Parameters map[string]string `json:"parameters"`
+	// Selected output parameters
+	Outputs map[string]string `json:"outputs"`
+	// Whether fields were shortened or entries omitted
+	Truncated bool `json:"truncated"`
+}
+
+type ArchivedWorkflowSummary struct {
+	// Archive UID
+	UID string `json:"uid"`
+	// Workflow name
+	Name string `json:"name"`
+	// Kubernetes namespace
+	Namespace string `json:"namespace"`
+	// Workflow phase
+	Status string `json:"status"`
+	// RFC3339 start timestamp
+	StartedAt *string `json:"started_at,omitempty"`
+	// RFC3339 finish timestamp
+	FinishedAt *string `json:"finished_at,omitempty"`
+}
+
 // ClusterWorkflowTemplateDetailResult is the result type of the argo service
 // GetClusterWorkflowTemplate method.
 type ClusterWorkflowTemplateDetailResult struct {
@@ -101,6 +173,17 @@ type ClusterWorkflowTemplateSummary struct {
 	Name string `json:"name"`
 	// Default template entrypoint
 	Entrypoint *string `json:"entrypoint,omitempty"`
+}
+
+// CreatedWorkflowResult is the result type of the argo service
+// SubmitWorkflowTemplate method.
+type CreatedWorkflowResult struct {
+	// Outcome; always ok after successful dispatch
+	Status string `json:"status"`
+	// Human-readable outcome
+	Message string `json:"message"`
+	// Argo-created workflow summary
+	Workflow *WorkflowSummary `json:"workflow"`
 }
 
 type CronHistoryEntry struct {
@@ -174,6 +257,15 @@ type CronWorkflowSummary struct {
 	Suspended *bool `json:"suspended,omitempty"`
 }
 
+// GetArchivedWorkflowPayload is the payload type of the argo service
+// GetArchivedWorkflow method.
+type GetArchivedWorkflowPayload struct {
+	// Kubernetes namespace; defaults to ARGO_NAMESPACE
+	Namespace *string `json:"namespace,omitempty"`
+	// Archive UID
+	UID string `json:"uid"`
+}
+
 // GetClusterWorkflowTemplatePayload is the payload type of the argo service
 // GetClusterWorkflowTemplate method.
 type GetClusterWorkflowTemplatePayload struct {
@@ -205,6 +297,34 @@ type GetCronWorkflowPayload struct {
 	Name string `json:"name"`
 }
 
+// GetWorkflowArtifactsPayload is the payload type of the argo service
+// GetWorkflowArtifacts method.
+type GetWorkflowArtifactsPayload struct {
+	// Kubernetes namespace; defaults to ARGO_NAMESPACE
+	Namespace *string `json:"namespace,omitempty"`
+	// Exact workflow name
+	Name string `json:"name"`
+	// Optional exact node ID
+	NodeID *string `json:"node_id,omitempty"`
+	// Zero-based offset
+	Offset int `json:"offset,omitempty"`
+	// Maximum artifacts; defaults to 50
+	Limit int `json:"limit,omitempty"`
+}
+
+// GetWorkflowEventsPayload is the payload type of the argo service
+// GetWorkflowEvents method.
+type GetWorkflowEventsPayload struct {
+	// Kubernetes namespace; defaults to ARGO_NAMESPACE
+	Namespace *string `json:"namespace,omitempty"`
+	// Exact workflow name
+	Name string `json:"name"`
+	// Maximum observed events; defaults to 50
+	Limit int `json:"limit,omitempty"`
+	// Observation duration in seconds; defaults to 2
+	DurationSeconds int `json:"duration_seconds,omitempty"`
+}
+
 // GetWorkflowLogsPayload is the payload type of the argo service
 // GetWorkflowLogs method.
 type GetWorkflowLogsPayload struct {
@@ -220,6 +340,23 @@ type GetWorkflowLogsPayload struct {
 	Search *string `json:"search,omitempty"`
 	// Maximum lines to return; zero returns all lines
 	MaxLines int `json:"max_lines,omitempty"`
+}
+
+// GetWorkflowNodesPayload is the payload type of the argo service
+// GetWorkflowNodes method.
+type GetWorkflowNodesPayload struct {
+	// Kubernetes namespace; defaults to ARGO_NAMESPACE
+	Namespace *string `json:"namespace,omitempty"`
+	// Exact workflow name
+	Name string `json:"name"`
+	// Optional exact node phase
+	Phase *string `json:"phase,omitempty"`
+	// Optional exact node ID
+	NodeID *string `json:"node_id,omitempty"`
+	// Zero-based offset
+	Offset int `json:"offset,omitempty"`
+	// Maximum nodes; defaults to 50
+	Limit int `json:"limit,omitempty"`
 }
 
 // GetWorkflowPayload is the payload type of the argo service GetWorkflow
@@ -238,6 +375,69 @@ type GetWorkflowTemplatePayload struct {
 	Namespace *string `json:"namespace,omitempty"`
 	// Exact WorkflowTemplate name; use list_workflow_templates to discover names
 	Name string `json:"name"`
+}
+
+// LintResult is the result type of the argo service LintWorkflow method.
+type LintResult struct {
+	// Whether Argo accepted the manifest
+	Valid bool `json:"valid"`
+	// Manifest resource name
+	Name string `json:"name"`
+	// Resolved namespace for namespaced resources
+	Namespace *string `json:"namespace,omitempty"`
+	// namespaced or cluster
+	Scope string `json:"scope"`
+	// Validation source; always argo
+	Source string `json:"source"`
+}
+
+// LintWorkflowPayload is the payload type of the argo service LintWorkflow
+// method.
+type LintWorkflowPayload struct {
+	// Kubernetes namespace; defaults to ARGO_NAMESPACE
+	Namespace *string `json:"namespace,omitempty"`
+	// Complete Workflow JSON object, maximum 256 KiB
+	ManifestJSON string `json:"manifest_json"`
+}
+
+// LintWorkflowTemplatePayload is the payload type of the argo service
+// LintWorkflowTemplate method.
+type LintWorkflowTemplatePayload struct {
+	// Optional for namespaced templates and defaults to ARGO_NAMESPACE; forbidden
+	// for cluster scope
+	Namespace *string `json:"namespace,omitempty"`
+	// Validate a ClusterWorkflowTemplate; defaults to false
+	ClusterScope bool `json:"cluster_scope,omitempty"`
+	// Complete template JSON object, maximum 256 KiB
+	ManifestJSON string `json:"manifest_json"`
+}
+
+// ListArchivedWorkflowsPayload is the payload type of the argo service
+// ListArchivedWorkflows method.
+type ListArchivedWorkflowsPayload struct {
+	// Kubernetes namespace; defaults to ARGO_NAMESPACE
+	Namespace *string `json:"namespace,omitempty"`
+	// Optional Kubernetes label selector
+	LabelSelector *string `json:"label_selector,omitempty"`
+	// Optional workflow name prefix
+	NamePrefix *string `json:"name_prefix,omitempty"`
+	// Maximum archived workflows; defaults to 50
+	Limit int `json:"limit,omitempty"`
+	// Opaque continuation token
+	Continue *string `json:"continue,omitempty"`
+}
+
+// ListArchivedWorkflowsResult is the result type of the argo service
+// ListArchivedWorkflows method.
+type ListArchivedWorkflowsResult struct {
+	// Archived workflow summaries
+	Workflows []*ArchivedWorkflowSummary `json:"workflows"`
+	// Items returned
+	Count int `json:"count"`
+	// Opaque continuation token
+	Continue *string `json:"continue,omitempty"`
+	// Whether another page is available
+	HasMore bool `json:"has_more"`
 }
 
 // ListClusterWorkflowTemplatesPayload is the payload type of the argo service
@@ -373,6 +573,28 @@ type ListWorkflowsResult struct {
 	HasMore bool `json:"has_more"`
 }
 
+// ResubmitWorkflowPayload is the payload type of the argo service
+// ResubmitWorkflow method.
+type ResubmitWorkflowPayload struct {
+	// Kubernetes namespace; defaults to ARGO_NAMESPACE
+	Namespace *string `json:"namespace,omitempty"`
+	// Source workflow name
+	Name string `json:"name"`
+	// Reuse successful outputs; defaults to false
+	Memoized bool `json:"memoized,omitempty"`
+	// Parameter overrides
+	Parameters map[string]string `json:"parameters,omitempty"`
+}
+
+// ResumeWorkflowPayload is the payload type of the argo service ResumeWorkflow
+// method.
+type ResumeWorkflowPayload struct {
+	// Kubernetes namespace; defaults to ARGO_NAMESPACE
+	Namespace *string `json:"namespace,omitempty"`
+	// Exact workflow name
+	Name string `json:"name"`
+}
+
 // RetryWorkflowPayload is the payload type of the argo service RetryWorkflow
 // method.
 type RetryWorkflowPayload struct {
@@ -382,6 +604,32 @@ type RetryWorkflowPayload struct {
 	Name string `json:"name"`
 	// Also restart successful steps; defaults to false
 	RestartSuccessful *bool `json:"restart_successful,omitempty"`
+	// Preview mode; defaults to true and does not call Argo
+	DryRun *bool `json:"dry_run,omitempty"`
+	// Single-use token returned by a matching dry-run preview
+	ConfirmationToken *string `json:"confirmation_token,omitempty"`
+}
+
+// SubmitWorkflowTemplatePayload is the payload type of the argo service
+// SubmitWorkflowTemplate method.
+type SubmitWorkflowTemplatePayload struct {
+	// Kubernetes namespace; defaults to ARGO_NAMESPACE
+	Namespace *string `json:"namespace,omitempty"`
+	// Source template name
+	TemplateName string `json:"template_name"`
+	// Submit a ClusterWorkflowTemplate; defaults to false
+	ClusterScope bool `json:"cluster_scope,omitempty"`
+	// Parameter overrides
+	Parameters map[string]string `json:"parameters,omitempty"`
+}
+
+// SuspendWorkflowPayload is the payload type of the argo service
+// SuspendWorkflow method.
+type SuspendWorkflowPayload struct {
+	// Kubernetes namespace; defaults to ARGO_NAMESPACE
+	Namespace *string `json:"namespace,omitempty"`
+	// Exact workflow name
+	Name string `json:"name"`
 }
 
 type TemplateSummary struct {
@@ -419,6 +667,51 @@ type ToggleCronSuspensionPayload struct {
 	Suspend bool `json:"suspend"`
 }
 
+// TriggerCronWorkflowPayload is the payload type of the argo service
+// TriggerCronWorkflow method.
+type TriggerCronWorkflowPayload struct {
+	// Kubernetes namespace; defaults to ARGO_NAMESPACE
+	Namespace *string `json:"namespace,omitempty"`
+	// CronWorkflow name
+	Name string `json:"name"`
+	// Parameter overrides
+	Parameters map[string]string `json:"parameters,omitempty"`
+}
+
+type WorkflowArtifactSummary struct {
+	// Artifact name
+	Name string `json:"name"`
+	// Owning node ID
+	NodeID string `json:"node_id"`
+	// inputs or outputs
+	Direction string `json:"direction"`
+	// Container artifact path
+	Path *string `json:"path,omitempty"`
+	// Whether the artifact is optional
+	Optional bool `json:"optional"`
+	// Safe Argo artifact download URL
+	DownloadURL *string `json:"download_url,omitempty"`
+}
+
+// WorkflowArtifactsResult is the result type of the argo service
+// GetWorkflowArtifacts method.
+type WorkflowArtifactsResult struct {
+	// Artifact metadata sorted by node, direction, and name
+	Artifacts []*WorkflowArtifactSummary `json:"artifacts"`
+	// Total filtered artifacts before paging
+	Total int `json:"total"`
+	// Artifacts returned
+	Count int `json:"count"`
+	// Offset for the next page; absent when exhausted
+	NextOffset *int `json:"next_offset,omitempty"`
+	// Whether another page exists or fields/links were shortened
+	Truncated bool `json:"truncated"`
+	// Whether displayed fields were shortened or a link was omitted
+	FieldsTruncated bool `json:"fields_truncated"`
+	// Truncation or paging note
+	Note *string `json:"note,omitempty"`
+}
+
 // WorkflowDetailResult is the result type of the argo service GetWorkflow
 // method.
 type WorkflowDetailResult struct {
@@ -448,6 +741,38 @@ type WorkflowDetailResult struct {
 	Outputs map[string]string `json:"outputs,omitempty"`
 }
 
+type WorkflowEventSummary struct {
+	// Event type
+	Type string `json:"type"`
+	// Event reason
+	Reason *string `json:"reason,omitempty"`
+	// Diagnostic message, truncated to 4 KiB
+	Message *string `json:"message,omitempty"`
+	// Occurrence count
+	Count int `json:"count"`
+	// First observation timestamp
+	FirstTimestamp *string `json:"first_timestamp,omitempty"`
+	// Last observation timestamp
+	LastTimestamp *string `json:"last_timestamp,omitempty"`
+	// Event timestamp
+	EventTime *string `json:"event_time,omitempty"`
+}
+
+// WorkflowEventsResult is the result type of the argo service
+// GetWorkflowEvents method.
+type WorkflowEventsResult struct {
+	// Events observed during the bounded watch window
+	Events []*WorkflowEventSummary `json:"events"`
+	// Events returned
+	Count int `json:"count"`
+	// Whether collection stopped at the requested limit
+	LimitReached bool `json:"limit_reached"`
+	// Whether diagnostic text was shortened
+	FieldsTruncated bool `json:"fields_truncated"`
+	// Observation-window explanation
+	Note string `json:"note"`
+}
+
 // WorkflowLogsResult is the result type of the argo service GetWorkflowLogs
 // method.
 type WorkflowLogsResult struct {
@@ -473,6 +798,50 @@ type WorkflowLogsResult struct {
 	Note *string `json:"note,omitempty"`
 	// Rendered log entries; empty when no entries match
 	Logs string `json:"logs"`
+}
+
+type WorkflowNodeSummary struct {
+	// Stable node ID
+	ID string `json:"id"`
+	// Node name
+	Name string `json:"name"`
+	// Human-readable node name
+	DisplayName *string `json:"display_name,omitempty"`
+	// Node type
+	Type string `json:"type"`
+	// Node phase
+	Phase *string `json:"phase,omitempty"`
+	// Template name
+	TemplateName *string `json:"template_name,omitempty"`
+	// Template boundary node ID
+	BoundaryID *string `json:"boundary_id,omitempty"`
+	// Child node IDs; links may point outside the current page
+	Children []string `json:"children"`
+	// RFC3339 start timestamp
+	StartedAt *string `json:"started_at,omitempty"`
+	// RFC3339 finish timestamp
+	FinishedAt *string `json:"finished_at,omitempty"`
+	// Diagnostic message, truncated to 4 KiB
+	Message *string `json:"message,omitempty"`
+}
+
+// WorkflowNodesResult is the result type of the argo service GetWorkflowNodes
+// method.
+type WorkflowNodesResult struct {
+	// Filtered nodes sorted by stable ID
+	Nodes []*WorkflowNodeSummary `json:"nodes"`
+	// Total filtered nodes before paging
+	Total int `json:"total"`
+	// Nodes returned
+	Count int `json:"count"`
+	// Offset for the next page; absent when exhausted
+	NextOffset *int `json:"next_offset,omitempty"`
+	// Whether another page exists or fields were shortened
+	Truncated bool `json:"truncated"`
+	// Whether any displayed field or child list was shortened
+	FieldsTruncated bool `json:"fields_truncated"`
+	// Truncation or paging note
+	Note *string `json:"note,omitempty"`
 }
 
 // Workflow summary returned by Argo.
@@ -559,6 +928,28 @@ func MakeArgoRequestRejected(err error) *loom.ServiceError {
 		Code:        "argo.request.rejected",
 		SafeMessage: "Argo rejected the request.",
 		RetryHint:   "Check the tool inputs and current resource state.",
+	})
+	return serr
+}
+
+// MakeInvalidInput builds a loom.ServiceError from an error.
+func MakeInvalidInput(err error) *loom.ServiceError {
+	serr := loom.NewServiceError(err, "invalid_input", false, false, false)
+	loom.WithErrorRemedy(serr, &loom.ErrorRemedy{
+		Code:        "argo.input.invalid",
+		SafeMessage: "The tool input is invalid.",
+		RetryHint:   "Correct the named input and retry. No Argo request was made for local validation failures.",
+	})
+	return serr
+}
+
+// MakeInvalidState builds a loom.ServiceError from an error.
+func MakeInvalidState(err error) *loom.ServiceError {
+	serr := loom.NewServiceError(err, "invalid_state", false, false, false)
+	loom.WithErrorRemedy(serr, &loom.ErrorRemedy{
+		Code:        "argo.state.invalid",
+		SafeMessage: "The Argo resource is not in a state that permits this action.",
+		RetryHint:   "Inspect the current workflow state before deciding whether to retry.",
 	})
 	return serr
 }

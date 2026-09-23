@@ -52,6 +52,7 @@ jobs:
         run: |
           work_dir="$(mktemp -d)"
           release_json="$work_dir/release.json"
+          release_assets_json="$work_dir/release-assets.json"
           checksums="$work_dir/checksums.txt"
           package_dir="$work_dir/homebrew"
 
@@ -59,11 +60,28 @@ jobs:
           jq -e --arg tag "$TAG" \
             '.tag_name == $tag and .draft == false and .prerelease == false' \
             "$release_json" >/dev/null
+          release_id="$(jq -er \
+            '.id | select(type == "number" and . > 0 and floor == .)' \
+            "$release_json")"
 
-          gh release download "$TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --pattern checksums.txt \
-            --output "$checksums"
+          gh api --paginate --slurp \
+            "repos/$GITHUB_REPOSITORY/releases/$release_id/assets" \
+            >"$release_assets_json"
+          checksum_asset_id="$(jq -er '
+            [.[][] | select(.name == "checksums.txt")] as $matches
+            | if ($matches | length) == 1 then
+                $matches[0]
+              else
+                error("expected exactly one checksums.txt release asset")
+              end
+            | select(.state == "uploaded")
+            | .id
+            | select(type == "number" and . > 0 and floor == .)
+          ' "$release_assets_json")"
+
+          gh api "repos/$GITHUB_REPOSITORY/releases/assets/$checksum_asset_id" \
+            -H 'Accept: application/octet-stream' \
+            >"$checksums"
 
           go run ./cmd/render-homebrew-formula \
             -version "${TAG#v}" \

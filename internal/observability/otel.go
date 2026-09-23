@@ -32,6 +32,8 @@ type Runtime struct {
 	logsEnabled   bool
 }
 
+func (r *Runtime) IsEnabled() bool { return r != nil && r.Enabled }
+
 func Start(ctx context.Context, cfg Config) (*Runtime, error) {
 	if !cfg.Enabled {
 		return &Runtime{}, nil

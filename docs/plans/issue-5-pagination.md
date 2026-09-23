@@ -4,7 +4,7 @@ Implement [issue #5](https://github.com/CaliLuke/go-argo-mcp/issues/5) after typ
 
 ## Status
 
-- 2026-09-22 — Fresh Sol reviewer approved all three review fixes; parent publication gates passed. Ready for commit/push.
+- 2026-09-22 — Fresh Sol reviewer approved all three review fixes; parent publication gates passed. Committed and pushed as `8439656` with `Fixes #5`; GitHub issue closed and CI run `35811607176` succeeded.
 - 2026-09-22 — Draft; requires review against the completed issue 1 implementation.
 - 2026-09-22 — Fresh reviewer `review_plan_5` approved after fixes; ready once issue 1 lands, subject to checking its actual model names.
 - 2026-09-22 — Implementation complete; focused/full tests, deterministic generation, and `prek run --all-files` pass. After contract generation, the shared scanner was implemented before its complete regression suite, so the original test-first sequencing check remains open. Awaiting fresh Sol review and parent delivery.
@@ -59,4 +59,4 @@ Checklist
 - [x] Add `internal/integration` official SDK regressions for collection schemas and page sequences; run `go test ./internal/integration`.
 - [x] Update README collection documentation with concrete first-page and continuation JSON examples.
 - [x] Run `make generate`, `go test ./...`, and `prek run --all-files`; confirm a second generation is deterministic.
-- [ ] Return evidence to the parent; resolve fresh Sol review findings and rerun affected checks. Parent commits with `Fixes #5` and pushes after approval.
+- [x] Return evidence to the parent; resolve fresh Sol review findings and rerun affected checks. Parent commits with `Fixes #5` and pushes after approval.

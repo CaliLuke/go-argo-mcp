@@ -1,6 +1,6 @@
 # go-argo-mcp
 
-A lightweight Go MCP server for connecting AI tools to [Argo Workflows](https://argo-workflows.readthedocs.io/). It uses Loom and Loom-MCP to expose a typed Streamable HTTP MCP endpoint with environment-only configuration.
+A lightweight Go MCP server for connecting AI tools to [Argo Workflows](https://argo-workflows.readthedocs.io/). It uses Loom and Loom-MCP to expose typed stdio, stateful Streamable HTTP, and stateless Streamable HTTP transports with environment-only configuration.
 
 The server is read-only by default. Mutation and destructive tools require explicit environment flags, namespace policy is enforced before Argo calls, and workflow termination can require a scoped one-time confirmation token.
 
@@ -112,7 +112,79 @@ curl --fail http://127.0.0.1:8080/healthz
 codex mcp list
 ```
 
-The binary is an HTTP server, so the MCP client does not launch it. Keep `go-argo-mcp` running with your preferred process supervisor. When running it as a service, set an absolute `MCP_AUDIT_FILE` path in a writable directory.
+In HTTP mode, the MCP client does not launch the binary. Keep `go-argo-mcp` running with your preferred process supervisor. When running it as a service, set an absolute `MCP_AUDIT_FILE` path in a writable directory.
+
+### Transport modes
+
+`ARGO_MCP_TRANSPORT` selects one of three modes:
+
+| Value | Behavior |
+| --- | --- |
+| `http` | Default. Stateful Streamable HTTP at `/rpc`, plus `/healthz` |
+| `http-stateless` | Sessionless Streamable HTTP at `/rpc`, plus `/healthz` |
+| `stdio` | MCP JSON-RPC over stdin/stdout; no network listener |
+
+Stateless HTTP accepts protocol traffic through `POST` only. It returns `405 Method Not Allowed` for `GET` and `DELETE`, emits no MCP session ID, and does not provide subscriptions, replay, or server-to-client requests. Startup rejects `MCPGODEBUG=allowsessionsinstateless=1`, because that SDK compatibility flag restores session behavior.
+
+In stdio mode, `ARGO_MCP_ADDR` is ignored. Stdout is reserved for MCP JSON-RPC frames; operational logs use stderr. Audit and telemetry retain their configured destinations, and audit paths that resolve to stdout are rejected before the SDK starts. EOF, SIGINT, and SIGTERM close the transport, audit writer, and telemetry runtime. HTTP signals stop accepting new work and allow in-flight requests up to five seconds to finish before forced shutdown.
+
+Destructive confirmation tokens are stored in the server process. A token remains one-time and scoped to the exact action, but stateless HTTP does not make it portable across replicas. Route a preview and its confirmed action to the same process or use one replica until shared confirmation persistence is available.
+
+### Local stdio clients
+
+Use an absolute installed binary path and an absolute writable audit path in desktop client configuration. Replace the sample paths when Homebrew or your home directory uses a different location.
+
+Codex CLI:
+
+```bash
+codex mcp add argo_workflows \
+  --env ARGO_MCP_TRANSPORT=stdio \
+  --env ARGO_BASE_URL=http://localhost:2746 \
+  --env ARGO_NAMESPACE=default \
+  --env MCP_AUDIT_FILE=/Users/you/Library/Logs/go-argo-mcp/audit.jsonl \
+  -- /opt/homebrew/bin/go-argo-mcp
+```
+
+Claude Desktop and Cursor use the same `mcpServers` entry in their respective JSON configuration files:
+
+```json
+{
+  "mcpServers": {
+    "argo_workflows": {
+      "command": "/opt/homebrew/bin/go-argo-mcp",
+      "args": [],
+      "env": {
+        "ARGO_MCP_TRANSPORT": "stdio",
+        "ARGO_BASE_URL": "http://localhost:2746",
+        "ARGO_NAMESPACE": "default",
+        "MCP_AUDIT_FILE": "/Users/you/Library/Logs/go-argo-mcp/audit.jsonl"
+      }
+    }
+  }
+}
+```
+
+VS Code `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "argo_workflows": {
+      "type": "stdio",
+      "command": "/opt/homebrew/bin/go-argo-mcp",
+      "args": [],
+      "env": {
+        "ARGO_MCP_TRANSPORT": "stdio",
+        "ARGO_BASE_URL": "http://localhost:2746",
+        "ARGO_NAMESPACE": "default",
+        "MCP_AUDIT_FILE": "/Users/you/Library/Logs/go-argo-mcp/audit.jsonl"
+      }
+    }
+  }
+}
+```
+
+Configuration references: [Codex MCP commands](https://learn.chatgpt.com/docs/developer-commands#codex-mcp), [Claude Desktop local servers](https://modelcontextprotocol.io/docs/2026-07-28/develop/connect-local-servers), [Cursor MCP configuration](https://prod.cursor.com/help/customization/mcp), and [VS Code MCP configuration](https://code.visualstudio.com/docs/agents/reference/mcp-configuration).
 
 ## Configuration
 
@@ -120,6 +192,7 @@ The binary is an HTTP server, so the MCP client does not launch it. Keep `go-arg
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
+| `ARGO_MCP_TRANSPORT` | `http` | `http`, `http-stateless`, or `stdio` |
 | `ARGO_MCP_ADDR` | `127.0.0.1:8080` | HTTP listen address; set explicitly to expose it beyond the local machine |
 | `ARGO_BASE_URL` | required | Argo Server API base URL |
 | `ARGO_NAMESPACE` | `default` | Namespace used when a tool omits one |
@@ -215,7 +288,7 @@ brew style ./dist/homebrew/Formula/go-argo-mcp.rb
 
 Pushing a `v*` tag creates GitHub release archives for macOS, Linux, and Windows. The release workflow then renders a checksummed multi-platform formula with `cmd/render-homebrew-formula` and commits it to `CaliLuke/homebrew-tap`. The repository must define a `HOMEBREW_TAP_GITHUB_TOKEN` Actions secret with write access to that tap.
 
-The test suite includes focused HTTP client tests, confirmation and namespace-policy tests, audit interception tests, and an end-to-end official MCP Go SDK test that advertises and invokes all 13 tools against a simulated Argo API.
+The test suite includes focused HTTP client tests, confirmation and namespace-policy tests, audit interception tests, and official MCP Go SDK coverage for stateful HTTP, stateless HTTP, and a real stdio child process. Transport parity tests exercise reads, structured results, mapped errors, namespace and pagination rejection before Argo, default mutation denial, allowed mutation, destructive confirmation and replay rejection, and audit redaction.
 
 ## Troubleshooting
 
@@ -238,4 +311,5 @@ The test suite includes focused HTTP client tests, confirmation and namespace-po
 - `internal/service/` — tool behavior and safety policy
 - `internal/confirmation/` — scoped one-time confirmations
 - `internal/mcpaudit/` — generated MCP interceptor-backed JSONL audit
-- `cmd/go-argo-mcp/` — server bootstrap
+- `internal/server/` — shared service, adapter, transport, and lifecycle bootstrap
+- `cmd/go-argo-mcp/` — version, signal, and process exit entrypoint

@@ -1,4 +1,4 @@
-name: Publish Homebrew formula
+name: Publish Homebrew packages
 
 on:
   workflow_call:
@@ -44,8 +44,8 @@ jobs:
           go-version: "1.27.1"
           cache: true
 
-      - name: Verify release and render formula
-        id: formula
+      - name: Verify release and render packages
+        id: packages
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
@@ -53,7 +53,7 @@ jobs:
           work_dir="$(mktemp -d)"
           release_json="$work_dir/release.json"
           checksums="$work_dir/checksums.txt"
-          formula="$work_dir/go-argo-mcp.rb"
+          package_dir="$work_dir/homebrew"
 
           gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" >"$release_json"
           jq -e --arg tag "$TAG" \
@@ -68,76 +68,87 @@ jobs:
           go run ./cmd/render-homebrew-formula \
             -version "${TAG#v}" \
             -checksums "$checksums" \
-            -output "$formula"
+            -format formula \
+            -output "$package_dir/Formula/go-argo-mcp.rb"
 
-          echo "path=$formula" >>"$GITHUB_OUTPUT"
+          go run ./cmd/render-homebrew-formula \
+            -version "${TAG#v}" \
+            -checksums "$checksums" \
+            -format cask \
+            -output "$package_dir/Casks/go-argo-mcp.rb"
 
-      - name: Publish and verify Homebrew formula
+          echo "directory=$package_dir" >>"$GITHUB_OUTPUT"
+
+      - name: Publish and verify Homebrew packages
         env:
-          FORMULA_PATH: ${{ steps.formula.outputs.path }}
+          PACKAGE_DIR: ${{ steps.packages.outputs.directory }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
           TAG: ${{ inputs.tag }}
         run: |
-          endpoint="https://api.github.com/repos/CaliLuke/homebrew-tap/contents/Formula/go-argo-mcp.rb"
           response="$(mktemp)"
           payload="$(mktemp)"
-          stored_formula="$(mktemp)"
-          trap 'rm -f "$response" "$payload" "$stored_formula"' EXIT
+          stored_package="$(mktemp)"
+          trap 'rm -f "$response" "$payload" "$stored_package"' EXIT
           headers=(
             --header "Accept: application/vnd.github+json"
             --header "Authorization: Bearer $HOMEBREW_TAP_GITHUB_TOKEN"
             --header "X-GitHub-Api-Version: 2022-11-28"
           )
 
-          status="$(curl --silent --show-error \
-            --output "$response" \
-            --write-out '%{http_code}' \
-            "${headers[@]}" \
-            "$endpoint")"
-          case "$status" in
-            200)
-              current_sha="$(jq -er '.sha' "$response")"
-              ;;
-            404)
-              current_sha=""
-              ;;
-            *)
+          for relative_path in Formula/go-argo-mcp.rb Casks/go-argo-mcp.rb; do
+            package_path="$PACKAGE_DIR/$relative_path"
+            endpoint="https://api.github.com/repos/CaliLuke/homebrew-tap/contents/$relative_path"
+
+            status="$(curl --silent --show-error \
+              --output "$response" \
+              --write-out '%{http_code}' \
+              "${headers[@]}" \
+              "$endpoint")"
+            case "$status" in
+              200)
+                current_sha="$(jq -er '.sha' "$response")"
+                ;;
+              404)
+                current_sha=""
+                ;;
+              *)
+                jq -r '.message // "GitHub API request failed"' "$response" >&2
+                echo "Reading the current package at $relative_path failed with HTTP $status" >&2
+                exit 1
+                ;;
+            esac
+
+            content="$(base64 -w 0 "$package_path")"
+            jq -n \
+              --arg message "Update go-argo-mcp to $TAG" \
+              --arg content "$content" \
+              --arg sha "$current_sha" \
+              '$ARGS.named | if .sha == "" then del(.sha) else . end' >"$payload"
+
+            status="$(curl --silent --show-error \
+              --request PUT \
+              --output "$response" \
+              --write-out '%{http_code}' \
+              "${headers[@]}" \
+              --header "Content-Type: application/json" \
+              --data-binary "@$payload" \
+              "$endpoint")"
+            if [[ "$status" != "200" && "$status" != "201" ]]; then
               jq -r '.message // "GitHub API request failed"' "$response" >&2
-              echo "Reading the current formula failed with HTTP $status" >&2
+              echo "Publishing the package at $relative_path failed with HTTP $status" >&2
               exit 1
-              ;;
-          esac
+            fi
 
-          content="$(base64 -w 0 "$FORMULA_PATH")"
-          jq -n \
-            --arg message "Update go-argo-mcp to $TAG" \
-            --arg content "$content" \
-            --arg sha "$current_sha" \
-            '$ARGS.named | if .sha == "" then del(.sha) else . end' >"$payload"
-
-          status="$(curl --silent --show-error \
-            --request PUT \
-            --output "$response" \
-            --write-out '%{http_code}' \
-            "${headers[@]}" \
-            --header "Content-Type: application/json" \
-            --data-binary "@$payload" \
-            "$endpoint")"
-          if [[ "$status" != "200" && "$status" != "201" ]]; then
-            jq -r '.message // "GitHub API request failed"' "$response" >&2
-            echo "Publishing the formula failed with HTTP $status" >&2
-            exit 1
-          fi
-
-          status="$(curl --silent --show-error \
-            --output "$response" \
-            --write-out '%{http_code}' \
-            "${headers[@]}" \
-            "$endpoint")"
-          if [[ "$status" != "200" ]]; then
-            jq -r '.message // "GitHub API request failed"' "$response" >&2
-            echo "Reading the published formula failed with HTTP $status" >&2
-            exit 1
-          fi
-          jq -er '.content' "$response" | tr -d '\n' | base64 -d >"$stored_formula"
-          cmp "$FORMULA_PATH" "$stored_formula"
+            status="$(curl --silent --show-error \
+              --output "$response" \
+              --write-out '%{http_code}' \
+              "${headers[@]}" \
+              "$endpoint")"
+            if [[ "$status" != "200" ]]; then
+              jq -r '.message // "GitHub API request failed"' "$response" >&2
+              echo "Reading the published package at $relative_path failed with HTTP $status" >&2
+              exit 1
+            fi
+            jq -er '.content' "$response" | tr -d '\n' | base64 -d >"$stored_package"
+            cmp "$package_path" "$stored_package"
+          done

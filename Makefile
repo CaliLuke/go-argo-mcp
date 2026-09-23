@@ -26,3 +26,8 @@ formula-snapshot: release-snapshot
 		-version "$(FORMULA_VERSION)" \
 		-checksums dist/checksums.txt \
 		-output dist/homebrew/Formula/go-argo-mcp.rb
+	go run ./cmd/render-homebrew-formula \
+		-format cask \
+		-version "$(FORMULA_VERSION)" \
+		-checksums dist/checksums.txt \
+		-output dist/homebrew/Casks/go-argo-mcp.rb

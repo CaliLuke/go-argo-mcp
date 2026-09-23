@@ -149,10 +149,31 @@ submission body.
 
 ## Install
 
-Install the native binary with Homebrew:
+Install the native binary on macOS with the Homebrew cask:
 
 ```bash
-brew install CaliLuke/tap/go-argo-mcp
+brew install --cask CaliLuke/tap/go-argo-mcp
+```
+
+Update it with:
+
+```bash
+brew upgrade --cask CaliLuke/tap/go-argo-mcp
+```
+
+If you previously installed the formula, uninstall it before switching because
+both packages install the same binary path:
+
+```bash
+brew uninstall --formula CaliLuke/tap/go-argo-mcp
+brew install --cask CaliLuke/tap/go-argo-mcp
+```
+
+On Linux, install or update the formula explicitly:
+
+```bash
+brew install --formula CaliLuke/tap/go-argo-mcp
+brew upgrade --formula CaliLuke/tap/go-argo-mcp
 ```
 
 Verify the installed binary:
@@ -428,11 +449,12 @@ Validate the native release artifacts locally:
 goreleaser check
 make formula-snapshot
 brew style ./dist/homebrew/Formula/go-argo-mcp.rb
+brew style ./dist/homebrew/Casks/go-argo-mcp.rb
 ```
 
-Pushing a `v*` tag creates GitHub release archives for macOS, Linux, and Windows. The release workflow then renders a checksummed multi-platform formula with `cmd/render-homebrew-formula` and commits it to `CaliLuke/homebrew-tap`. The repository must define a `HOMEBREW_TAP_GITHUB_TOKEN` Actions secret. Use a fine-grained personal access token limited to the `CaliLuke/homebrew-tap` repository with Contents read and write permission and Metadata read permission.
+Pushing a `v*` tag creates GitHub release archives for macOS, Linux, and Windows. The release workflow then renders a checksummed macOS cask and multi-platform formula with `cmd/render-homebrew-formula` and commits both to `CaliLuke/homebrew-tap`. The repository must define a `HOMEBREW_TAP_GITHUB_TOKEN` Actions secret. Use a fine-grained personal access token limited to the `CaliLuke/homebrew-tap` repository with Contents read and write permission and Metadata read permission.
 
-If the binary release succeeded but formula publication failed, publish the existing release again with:
+If the binary release succeeded but Homebrew package publication failed, publish the existing release again with:
 
 ```bash
 gh workflow run publish-homebrew.yml -f tag=v0.2.0

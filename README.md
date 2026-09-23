@@ -430,7 +430,15 @@ make formula-snapshot
 brew style ./dist/homebrew/Formula/go-argo-mcp.rb
 ```
 
-Pushing a `v*` tag creates GitHub release archives for macOS, Linux, and Windows. The release workflow then renders a checksummed multi-platform formula with `cmd/render-homebrew-formula` and commits it to `CaliLuke/homebrew-tap`. The repository must define a `HOMEBREW_TAP_GITHUB_TOKEN` Actions secret with write access to that tap.
+Pushing a `v*` tag creates GitHub release archives for macOS, Linux, and Windows. The release workflow then renders a checksummed multi-platform formula with `cmd/render-homebrew-formula` and commits it to `CaliLuke/homebrew-tap`. The repository must define a `HOMEBREW_TAP_GITHUB_TOKEN` Actions secret. Use a fine-grained personal access token limited to the `CaliLuke/homebrew-tap` repository with Contents read and write permission and Metadata read permission.
+
+If the binary release succeeded but formula publication failed, publish the existing release again with:
+
+```bash
+gh workflow run publish-homebrew.yml -f tag=v0.2.0
+```
+
+This recovery workflow downloads the existing release checksums and does not rebuild or replace the binary release.
 
 The test suite includes focused HTTP client tests, confirmation and namespace-policy tests, audit interception tests, and official MCP Go SDK coverage for stateful HTTP, stateless HTTP, and a real stdio child process. Transport parity tests exercise reads, structured results, mapped errors, namespace and pagination rejection before Argo, default mutation denial, allowed mutation, destructive confirmation and replay rejection, and audit redaction.
 

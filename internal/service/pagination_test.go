@@ -23,19 +23,19 @@ func TestCollectionServicesMapPaginationMetadata(t *testing.T) {
 		call       func(*ArgoService) (any, error)
 	}{
 		{"workflows", "workflows", `{"metadata":{"name":"wf"},"status":{"phase":"Running"}}`, func(s *ArgoService) (any, error) {
-			return s.ListWorkflows(context.Background(), &genargo.ListWorkflowsPayload{Limit: intPtr(1), Continue: stringPointer(cursor)})
+			return s.ListWorkflows(context.Background(), &genargo.ListWorkflowsPayload{Limit: 1, Continue: stringPointer(cursor)})
 		}},
 		{"CronWorkflows", "cron_workflows", `{"metadata":{"name":"cron"}}`, func(s *ArgoService) (any, error) {
-			return s.ListCronWorkflows(context.Background(), &genargo.ListCronWorkflowsPayload{Limit: intPtr(1), Continue: stringPointer(cursor)})
+			return s.ListCronWorkflows(context.Background(), &genargo.ListCronWorkflowsPayload{Limit: 1, Continue: stringPointer(cursor)})
 		}},
 		{"WorkflowTemplates", "templates", `{"metadata":{"name":"template"}}`, func(s *ArgoService) (any, error) {
-			return s.ListWorkflowTemplates(context.Background(), &genargo.ListWorkflowTemplatesPayload{Limit: intPtr(1), Continue: stringPointer(cursor)})
+			return s.ListWorkflowTemplates(context.Background(), &genargo.ListWorkflowTemplatesPayload{Limit: 1, Continue: stringPointer(cursor)})
 		}},
 		{"ClusterWorkflowTemplates", "templates", `{"metadata":{"name":"template"}}`, func(s *ArgoService) (any, error) {
-			return s.ListClusterWorkflowTemplates(context.Background(), &genargo.ListClusterWorkflowTemplatesPayload{Limit: intPtr(1), Continue: stringPointer(cursor)})
+			return s.ListClusterWorkflowTemplates(context.Background(), &genargo.ListClusterWorkflowTemplatesPayload{Limit: 1, Continue: stringPointer(cursor)})
 		}},
 		{"history", "history", `{"metadata":{"name":"run"}}`, func(s *ArgoService) (any, error) {
-			return s.GetCronHistory(context.Background(), &genargo.GetCronHistoryPayload{Name: "nightly", Limit: intPtr(1), Continue: stringPointer(cursor)})
+			return s.GetCronHistory(context.Background(), &genargo.GetCronHistoryPayload{Name: "nightly", Limit: 1, Continue: stringPointer(cursor)})
 		}},
 	}
 	for _, test := range tests {
@@ -148,7 +148,7 @@ func TestCollectionServiceTreatsInternalZeroLimitAsDefault(t *testing.T) {
 	}))
 	defer server.Close()
 	svc := NewArgoService(ArgoServiceConfig{Client: argoapi.New(argoapi.Config{BaseURL: server.URL})})
-	if _, err := svc.ListWorkflows(context.Background(), &genargo.ListWorkflowsPayload{Limit: intPtr(0)}); err != nil {
+	if _, err := svc.ListWorkflows(context.Background(), &genargo.ListWorkflowsPayload{Limit: 0}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -165,23 +165,23 @@ func TestCollectionServicesRejectInvalidLimitsBeforeAnyArgoRequest(t *testing.T)
 			svc := NewArgoService(ArgoServiceConfig{Client: argoapi.New(argoapi.Config{BaseURL: server.URL})})
 			requests := []func() error{
 				func() error {
-					_, err := svc.ListWorkflows(context.Background(), &genargo.ListWorkflowsPayload{Limit: intPtr(limit)})
+					_, err := svc.ListWorkflows(context.Background(), &genargo.ListWorkflowsPayload{Limit: limit})
 					return err
 				},
 				func() error {
-					_, err := svc.ListCronWorkflows(context.Background(), &genargo.ListCronWorkflowsPayload{Limit: intPtr(limit)})
+					_, err := svc.ListCronWorkflows(context.Background(), &genargo.ListCronWorkflowsPayload{Limit: limit})
 					return err
 				},
 				func() error {
-					_, err := svc.ListWorkflowTemplates(context.Background(), &genargo.ListWorkflowTemplatesPayload{Limit: intPtr(limit)})
+					_, err := svc.ListWorkflowTemplates(context.Background(), &genargo.ListWorkflowTemplatesPayload{Limit: limit})
 					return err
 				},
 				func() error {
-					_, err := svc.ListClusterWorkflowTemplates(context.Background(), &genargo.ListClusterWorkflowTemplatesPayload{Limit: intPtr(limit)})
+					_, err := svc.ListClusterWorkflowTemplates(context.Background(), &genargo.ListClusterWorkflowTemplatesPayload{Limit: limit})
 					return err
 				},
 				func() error {
-					_, err := svc.GetCronHistory(context.Background(), &genargo.GetCronHistoryPayload{Name: "nightly", Limit: intPtr(limit)})
+					_, err := svc.GetCronHistory(context.Background(), &genargo.GetCronHistoryPayload{Name: "nightly", Limit: limit})
 					return err
 				},
 			}

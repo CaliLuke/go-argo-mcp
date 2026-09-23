@@ -4,7 +4,7 @@ Implement [issue #4](https://github.com/CaliLuke/go-argo-mcp/issues/4) after tra
 
 ## Status
 
-- 2026-09-22 — Fresh Sol reviewer `review_code_4` approved all five review corrections; focused/race tests and parent publication gates passed. Ready for commit/push.
+- 2026-09-22 — Fresh Sol reviewer `review_code_4` approved all five review corrections; focused/race tests and parent publication gates passed. Committed and pushed as `49096d3` with `Fixes #4`; GitHub issue closed and CI run `35816216530` succeeded.
 - 2026-09-22 — Draft, pending fresh review against completed transport code.
 - 2026-09-22 — Fresh reviewer `review_plan_4` approved after exact authority, SDK, telemetry and test-first fixes; ready after dependencies land.
 - 2026-09-22 — Fresh dependency-readiness reviewer `readiness_4` approved after explicit lookup and HTTP fixture migration steps were added against the actual issue-3 bootstrap; ready after issue 3 lands.
@@ -78,4 +78,4 @@ Checklist
 - [x] Add SDK and child-process security tests under `internal/integration/`, including IPv6 where supported, wildcard configuration, allowed proxy origins, healthz, absent/wrong/correct tokens and legacy loopback defaults. Run `go test ./internal/integration`.
 - [x] Update README environment/security/deployment tables and examples; remove the obsolete claim that inbound authentication does not exist.
 - [x] Run `make generate`, `go test ./...`, and `prek run --all-files`; return review evidence to parent.
-- [ ] Resolve fresh Sol review findings and rerun affected checks. Parent commits with `Fixes #4` and pushes after approval.
+- [x] Resolve fresh Sol review findings and rerun affected checks. Parent commits with `Fixes #4` and pushes after approval.

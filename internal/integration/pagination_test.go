@@ -3,6 +3,7 @@ package integration
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,7 +15,6 @@ import (
 
 	mcpargo "github.com/CaliLuke/go-argo-mcp/gen/mcp_argo"
 	"github.com/CaliLuke/go-argo-mcp/internal/argoapi"
-	"github.com/CaliLuke/go-argo-mcp/internal/mcpvalidation"
 	"github.com/CaliLuke/go-argo-mcp/internal/service"
 )
 
@@ -73,21 +73,23 @@ func TestCollectionToolSchemasAndPageSequences(t *testing.T) {
 		tools[tool.Name] = tool
 	}
 	tests := []struct {
-		name        string
-		arrayField  string
-		baseArgs    map[string]any
-		defaultText string
+		name         string
+		arrayField   string
+		baseArgs     map[string]any
+		defaultText  string
+		defaultLimit int
 	}{
-		{"list_workflows", "workflows", map[string]any{"namespace": "argo-ci", "status": "Running"}, "defaults to 50 when omitted"},
-		{"list_cron_workflows", "cron_workflows", map[string]any{"namespace": "argo-ci", "suspended": true}, "defaults to 50 when omitted"},
-		{"list_workflow_templates", "templates", map[string]any{"namespace": "argo-ci", "label_selector": "team=ci"}, "defaults to 50 when omitted"},
-		{"list_cluster_workflow_templates", "templates", map[string]any{"label_selector": "team=ci"}, "defaults to 50 when omitted"},
-		{"get_cron_history", "history", map[string]any{"namespace": "argo-ci", "name": "nightly"}, "defaults to 10 when omitted"},
+		{"list_workflows", "workflows", map[string]any{"namespace": "argo-ci", "status": "Running"}, "defaults to 50 when omitted", 50},
+		{"list_cron_workflows", "cron_workflows", map[string]any{"namespace": "argo-ci", "suspended": true}, "defaults to 50 when omitted", 50},
+		{"list_workflow_templates", "templates", map[string]any{"namespace": "argo-ci", "label_selector": "team=ci"}, "defaults to 50 when omitted", 50},
+		{"list_cluster_workflow_templates", "templates", map[string]any{"label_selector": "team=ci"}, "defaults to 50 when omitted", 50},
+		{"get_cron_history", "history", map[string]any{"namespace": "argo-ci", "name": "nightly"}, "defaults to 10 when omitted", 10},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			schema, err := json.Marshal(tools[test.name].InputSchema)
-			if err != nil || !strings.Contains(string(schema), test.defaultText) || strings.Contains(string(schema), `"default":`) || !strings.Contains(string(schema), `"minimum":1`) || !strings.Contains(string(schema), `"maximum":200`) || !strings.Contains(string(schema), `"continue"`) {
+			defaultJSON := fmt.Sprintf(`"default":%d`, test.defaultLimit)
+			if err != nil || !strings.Contains(string(schema), test.defaultText) || !strings.Contains(string(schema), defaultJSON) || !strings.Contains(string(schema), `"minimum":1`) || !strings.Contains(string(schema), `"maximum":200`) || !strings.Contains(string(schema), `"continue"`) {
 				t.Fatalf("pagination schema mismatch: %s err=%v", schema, err)
 			}
 			firstArgs := cloneArgs(test.baseArgs)
@@ -141,6 +143,14 @@ func TestCollectionToolsRejectExplicitInvalidLimitsBeforeArgo(t *testing.T) {
 			}
 		}
 	}
+	for _, tool := range tools {
+		args := cloneArgs(tool.args)
+		args["limit"] = nil
+		result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: tool.name, Arguments: args})
+		if err == nil && !result.IsError {
+			t.Fatalf("%s accepted explicit null limit: %#v", tool.name, result.StructuredContent)
+		}
+	}
 	if argoCalls.Load() != 0 {
 		t.Fatalf("invalid MCP limits made %d Argo requests, including history existence checks", argoCalls.Load())
 	}
@@ -187,6 +197,32 @@ func TestOptionalCollectionToolsAcceptNormalizedEmptyArguments(t *testing.T) {
 	}
 }
 
+func TestCronHistoryToolAppliesOmittedLimitDefault(t *testing.T) {
+	var listCalls atomic.Int32
+	argo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/cron-workflows/argo-ci/nightly" {
+			_, _ = w.Write([]byte(`{"metadata":{"name":"nightly"}}`))
+			return
+		}
+		listCalls.Add(1)
+		if got := r.URL.Query().Get("listOptions.limit"); got != "10" {
+			t.Fatalf("history default limit did not reach Argo: %q", got)
+		}
+		_, _ = w.Write([]byte(`{"items":[]}`))
+	}))
+	defer argo.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	session := newPaginationSession(t, ctx, argo.URL)
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "get_cron_history", Arguments: map[string]any{"name": "nightly"}})
+	if err != nil || result.IsError {
+		t.Fatalf("omitted history limit failed: result=%#v err=%v", result, err)
+	}
+	if listCalls.Load() != 1 {
+		t.Fatalf("history made %d list calls, want 1", listCalls.Load())
+	}
+}
+
 func TestCollectionRecoveryExamplesAreValidInputs(t *testing.T) {
 	argo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/cron-workflows/") && strings.HasSuffix(r.URL.Path, "/example") {
@@ -199,7 +235,8 @@ func TestCollectionRecoveryExamplesAreValidInputs(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	session := newPaginationSession(t, ctx, argo.URL)
-	for _, tool := range []string{"list_workflows", "list_cron_workflows", "list_workflow_templates", "list_cluster_workflow_templates", "get_cron_history"} {
+	tools := map[string]int{"list_workflows": 50, "list_cron_workflows": 50, "list_workflow_templates": 50, "list_cluster_workflow_templates": 50, "get_cron_history": 10}
+	for tool, defaultLimit := range tools {
 		t.Run(tool, func(t *testing.T) {
 			invalid, err := session.CallTool(ctx, &mcp.CallToolParams{Name: tool, Arguments: map[string]any{"unexpected": true}})
 			if err != nil || !invalid.IsError || len(invalid.Content) == 0 {
@@ -216,8 +253,8 @@ func TestCollectionRecoveryExamplesAreValidInputs(t *testing.T) {
 			if decodeErr := json.Unmarshal([]byte(exampleJSON), &example); decodeErr != nil {
 				t.Fatalf("decode recovery example %q: %v", exampleJSON, decodeErr)
 			}
-			if _, hasLimit := example["limit"]; hasLimit {
-				t.Fatalf("recovery example includes an invalid synthesized limit: %s", exampleJSON)
+			if example["limit"] != float64(defaultLimit) {
+				t.Fatalf("recovery example limit: got %#v want %d in %s", example["limit"], defaultLimit, exampleJSON)
 			}
 			result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: tool, Arguments: example})
 			if err != nil || result.IsError {
@@ -235,7 +272,6 @@ func newPaginationSession(t *testing.T, ctx context.Context, argoURL string) *mc
 	})
 	server, err := mcpargo.NewSDKServer(svc, &mcpargo.SDKServerOptions{Adapter: &mcpargo.MCPAdapterOptions{
 		StructuredStreamJSON: true,
-		ToolCallInterceptors: []mcpargo.ToolCallInterceptor{mcpvalidation.PaginationLimits()},
 	}})
 	if err != nil {
 		t.Fatal(err)

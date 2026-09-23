@@ -247,6 +247,7 @@ var _ = Service("argo", func() {
 				Enum("Running", "Succeeded", "Failed", "Pending", "Error")
 			})
 			Attribute("limit", Int, "Maximum number of workflows to return; defaults to 50 when omitted", func() {
+				Default(50)
 				Minimum(1)
 				Maximum(200)
 			})
@@ -322,6 +323,7 @@ var _ = Service("argo", func() {
 			Attribute("namespace", String, "Kubernetes namespace; defaults to the server's ARGO_NAMESPACE")
 			Attribute("suspended", Boolean, "Optional suspension-state filter")
 			Attribute("limit", Int, "Maximum number of CronWorkflows to return; defaults to 50 when omitted", func() {
+				Default(50)
 				Minimum(1)
 				Maximum(200)
 			})
@@ -350,6 +352,7 @@ var _ = Service("argo", func() {
 			Attribute("namespace", String, "Kubernetes namespace; defaults to the server's ARGO_NAMESPACE")
 			Attribute("name", String, "Exact CronWorkflow name; use list_cron_workflows to discover names")
 			Attribute("limit", Int, "Maximum history entries to return; defaults to 10 when omitted", func() {
+				Default(10)
 				Minimum(1)
 				Maximum(200)
 			})
@@ -380,6 +383,7 @@ var _ = Service("argo", func() {
 			Attribute("namespace", String, "Kubernetes namespace; defaults to the server's ARGO_NAMESPACE")
 			Attribute("label_selector", String, "Optional Kubernetes label selector")
 			Attribute("limit", Int, "Maximum number of WorkflowTemplates to return; defaults to 50 when omitted", func() {
+				Default(50)
 				Minimum(1)
 				Maximum(200)
 			})
@@ -407,6 +411,7 @@ var _ = Service("argo", func() {
 		Payload(func() {
 			Attribute("label_selector", String, "Optional Kubernetes label selector")
 			Attribute("limit", Int, "Maximum number of ClusterWorkflowTemplates to return; defaults to 50 when omitted", func() {
+				Default(50)
 				Minimum(1)
 				Maximum(200)
 			})

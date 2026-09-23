@@ -235,8 +235,13 @@ func TestTransportSafetyParity(t *testing.T) {
 			}
 
 			invalidLimit, invalidErr := session.CallTool(testContext(t), &mcp.CallToolParams{Name: "list_workflows", Arguments: map[string]any{"limit": 0}})
-			if invalidErr == nil || argoCalls.Load() != before {
+			if (invalidErr == nil && (invalidLimit == nil || !invalidLimit.IsError)) || argoCalls.Load() != before {
 				t.Fatalf("explicit zero limit reached Argo or was accepted: result=%#v err=%v calls=%d", invalidLimit, invalidErr, argoCalls.Load())
+			}
+
+			nullDryRun, nullDryRunErr := session.CallTool(testContext(t), &mcp.CallToolParams{Name: "terminate_workflow", Arguments: map[string]any{"name": "build-123", "reason": "cleanup", "dry_run": nil}})
+			if (nullDryRunErr == nil && (nullDryRun == nil || !nullDryRun.IsError)) || argoCalls.Load() != before {
+				t.Fatalf("explicit null dry_run reached Argo or was accepted: result=%#v err=%v calls=%d", nullDryRun, nullDryRunErr, argoCalls.Load())
 			}
 
 			retry := callTool(t, session, "retry_workflow", map[string]any{"name": "build-123"})

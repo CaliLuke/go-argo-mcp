@@ -607,14 +607,14 @@ func (s *ArgoService) GetCronHistory(ctx context.Context, payload *genargo.GetCr
 	return res, nil
 }
 
-func collectionLimit(limit *int, defaultValue int) (int, error) {
-	if limit == nil || *limit == 0 {
+func collectionLimit(limit, defaultValue int) (int, error) {
+	if limit == 0 {
 		return defaultValue, nil
 	}
-	if *limit < 0 || *limit > maximumListLimit {
+	if limit < 0 || limit > maximumListLimit {
 		return 0, fmt.Errorf("limit must be between 1 and %d", maximumListLimit)
 	}
-	return *limit, nil
+	return limit, nil
 }
 
 func pointerValue(value *string) string {

@@ -26,7 +26,7 @@ Parent verified configuration sources on 2026-09-22: [Codex MCP commands](https:
 
 ### Review resolutions
 
-Issue 5 adds `internal/mcpvalidation.PaginationLimits()` to `MCPAdapterOptions.ToolCallInterceptors` because the generated adapter does not enforce numeric bounds before the service interprets an internal zero as the default. The shared bootstrap must retain this interceptor in all transports and prove explicit zero is rejected before any Argo request in its parity tests.
+Loom-MCP v2.1.0-alpha.29 generates numeric schema validation before service dispatch, so the temporary issue 5 pagination interceptor has been removed. The shared bootstrap relies on the generated adapter in all transports, and its parity tests prove explicit zero is rejected before any Argo request.
 
 Bootstrap files are `internal/server/config.go`, `internal/server/server.go` and their `_test.go` siblings; executable tests run a built `./cmd/go-argo-mcp`. Establish only minimal compiling configuration/run interfaces first, then add transport AND safety-parity contract tests before implementing dispatch/lifecycle behavior. Existing milestone text is ordered by outcome, but this test-first sequence takes precedence. HTTP tests must exercise shared production bootstrap rather than recreate a different adapter.
 

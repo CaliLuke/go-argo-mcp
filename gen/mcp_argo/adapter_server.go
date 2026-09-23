@@ -594,7 +594,7 @@ func (a *MCPAdapter) generatedToolCatalog() []*ToolInfo {
 	return []*ToolInfo{&ToolInfo{
 		Annotations:  jsontext.Value([]byte("{\"readOnlyHint\":true}")),
 		Description:  stringPtr("List workflows in one Kubernetes namespace, optionally filtered by phase"),
-		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"properties\":{\"continue\":{\"type\":\"string\",\"description\":\"Opaque continuation token returned by a previous call; replay with the same filters and limit\"},\"limit\":{\"type\":\"integer\",\"description\":\"Maximum number of workflows to return; defaults to 50 when omitted\",\"minimum\":1,\"maximum\":200},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace to query; defaults to the server's ARGO_NAMESPACE\"},\"status\":{\"type\":\"string\",\"description\":\"Optional workflow status filter\",\"enum\":[\"Running\",\"Succeeded\",\"Failed\",\"Pending\",\"Error\"]}},\"additionalProperties\":false}")),
+		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"properties\":{\"continue\":{\"type\":\"string\",\"description\":\"Opaque continuation token returned by a previous call; replay with the same filters and limit\"},\"limit\":{\"type\":\"integer\",\"description\":\"Maximum number of workflows to return; defaults to 50 when omitted\",\"default\":50,\"minimum\":1,\"maximum\":200},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace to query; defaults to the server's ARGO_NAMESPACE\"},\"status\":{\"type\":\"string\",\"description\":\"Optional workflow status filter\",\"enum\":[\"Running\",\"Succeeded\",\"Failed\",\"Pending\",\"Error\"]}},\"additionalProperties\":false}")),
 		Name:         "list_workflows",
 		OutputSchema: jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"workflows\",\"count\",\"source\",\"has_more\"],\"properties\":{\"continue\":{\"type\":\"string\",\"description\":\"Opaque continuation token for the next page; replay it with the same filters and limit\"},\"count\":{\"type\":\"integer\",\"description\":\"Number of workflows returned\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"has_more\":{\"type\":\"boolean\",\"description\":\"Whether another page is available\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace queried\"},\"source\":{\"type\":\"string\",\"description\":\"Data source; always argo for live results\"},\"status\":{\"type\":\"string\",\"description\":\"Applied workflow status filter\"},\"workflows\":{\"type\":\"array\",\"description\":\"Matching workflows\",\"items\":{\"type\":\"object\",\"description\":\"Workflow summary returned by Argo.\",\"required\":[\"name\",\"namespace\",\"status\"],\"properties\":{\"duration\":{\"type\":\"string\",\"description\":\"Elapsed workflow duration\"},\"finished_at\":{\"type\":\"string\",\"description\":\"RFC3339 finish timestamp\"},\"name\":{\"type\":\"string\",\"description\":\"Workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace\"},\"progress\":{\"type\":\"string\",\"description\":\"Completed nodes over total nodes\"},\"started_at\":{\"type\":\"string\",\"description\":\"RFC3339 start timestamp\"},\"status\":{\"type\":\"string\",\"description\":\"Workflow phase or status\"}},\"additionalProperties\":false}}},\"additionalProperties\":false}")),
 		Title:        stringPtr("List Workflows"),
@@ -629,7 +629,7 @@ func (a *MCPAdapter) generatedToolCatalog() []*ToolInfo {
 	}, &ToolInfo{
 		Annotations:  jsontext.Value([]byte("{\"readOnlyHint\":true}")),
 		Description:  stringPtr("List CronWorkflows in one Kubernetes namespace"),
-		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"properties\":{\"continue\":{\"type\":\"string\",\"description\":\"Opaque continuation token returned by a previous call; replay with the same filters and limit\"},\"limit\":{\"type\":\"integer\",\"description\":\"Maximum number of CronWorkflows to return; defaults to 50 when omitted\",\"minimum\":1,\"maximum\":200},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"},\"suspended\":{\"type\":\"boolean\",\"description\":\"Optional suspension-state filter\"}},\"additionalProperties\":false}")),
+		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"properties\":{\"continue\":{\"type\":\"string\",\"description\":\"Opaque continuation token returned by a previous call; replay with the same filters and limit\"},\"limit\":{\"type\":\"integer\",\"description\":\"Maximum number of CronWorkflows to return; defaults to 50 when omitted\",\"default\":50,\"minimum\":1,\"maximum\":200},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"},\"suspended\":{\"type\":\"boolean\",\"description\":\"Optional suspension-state filter\"}},\"additionalProperties\":false}")),
 		Name:         "list_cron_workflows",
 		OutputSchema: jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"cron_workflows\",\"count\",\"source\",\"has_more\"],\"properties\":{\"continue\":{\"type\":\"string\",\"description\":\"Opaque continuation token for the next page; replay it with the same filters and limit\"},\"count\":{\"type\":\"integer\",\"description\":\"Number of CronWorkflows returned\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"cron_workflows\":{\"type\":\"array\",\"description\":\"Matching CronWorkflows\",\"items\":{\"type\":\"object\",\"required\":[\"name\",\"namespace\"],\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"CronWorkflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace\"},\"schedule\":{\"type\":\"string\",\"description\":\"Legacy single schedule, when configured\"},\"schedules\":{\"type\":\"array\",\"description\":\"All configured CronWorkflow schedules\",\"items\":{\"type\":\"string\"}},\"suspended\":{\"type\":\"boolean\",\"description\":\"Whether Argo scheduling is suspended\"},\"timezone\":{\"type\":\"string\",\"description\":\"IANA timezone for the schedules\"}},\"additionalProperties\":false}},\"has_more\":{\"type\":\"boolean\",\"description\":\"Whether another page is available\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace queried\"},\"source\":{\"type\":\"string\",\"description\":\"Data source; always argo for live results\"},\"suspended\":{\"type\":\"boolean\",\"description\":\"Applied suspension filter\"}},\"additionalProperties\":false}")),
 		Title:        stringPtr("List Cron Workflows"),
@@ -643,7 +643,7 @@ func (a *MCPAdapter) generatedToolCatalog() []*ToolInfo {
 	}, &ToolInfo{
 		Annotations:  jsontext.Value([]byte("{\"readOnlyHint\":true}")),
 		Description:  stringPtr("Get recent workflows created by an existing CronWorkflow"),
-		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"continue\":{\"type\":\"string\",\"description\":\"Opaque continuation token returned by a previous call; replay with the same limit\"},\"limit\":{\"type\":\"integer\",\"description\":\"Maximum history entries to return; defaults to 10 when omitted\",\"minimum\":1,\"maximum\":200},\"name\":{\"type\":\"string\",\"description\":\"Exact CronWorkflow name; use list_cron_workflows to discover names\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"}},\"additionalProperties\":false}")),
+		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"continue\":{\"type\":\"string\",\"description\":\"Opaque continuation token returned by a previous call; replay with the same limit\"},\"limit\":{\"type\":\"integer\",\"description\":\"Maximum history entries to return; defaults to 10 when omitted\",\"default\":10,\"minimum\":1,\"maximum\":200},\"name\":{\"type\":\"string\",\"description\":\"Exact CronWorkflow name; use list_cron_workflows to discover names\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"}},\"additionalProperties\":false}")),
 		Name:         "get_cron_history",
 		OutputSchema: jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"name\",\"history\",\"count\",\"source\",\"has_more\"],\"properties\":{\"continue\":{\"type\":\"string\",\"description\":\"Opaque continuation token for the next page; replay it with the same limit\"},\"count\":{\"type\":\"integer\",\"description\":\"Number of history entries returned\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"has_more\":{\"type\":\"boolean\",\"description\":\"Whether another page is available\"},\"history\":{\"type\":\"array\",\"description\":\"Recent workflows owned by this CronWorkflow\",\"items\":{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"duration\":{\"type\":\"string\",\"description\":\"Elapsed workflow duration\"},\"finished_at\":{\"type\":\"string\",\"description\":\"RFC3339 finish timestamp\"},\"name\":{\"type\":\"string\",\"description\":\"Generated workflow name\"},\"started_at\":{\"type\":\"string\",\"description\":\"RFC3339 start timestamp\"},\"status\":{\"type\":\"string\",\"description\":\"Workflow phase\"}},\"additionalProperties\":false}},\"name\":{\"type\":\"string\",\"description\":\"CronWorkflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace queried\"},\"source\":{\"type\":\"string\",\"description\":\"Data source; always argo for live results\"}},\"additionalProperties\":false}")),
 		Title:        stringPtr("Get Cron History"),
@@ -657,7 +657,7 @@ func (a *MCPAdapter) generatedToolCatalog() []*ToolInfo {
 	}, &ToolInfo{
 		Annotations:  jsontext.Value([]byte("{\"readOnlyHint\":true}")),
 		Description:  stringPtr("List WorkflowTemplates in one Kubernetes namespace"),
-		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"properties\":{\"continue\":{\"type\":\"string\",\"description\":\"Opaque continuation token returned by a previous call; replay with the same filters and limit\"},\"label_selector\":{\"type\":\"string\",\"description\":\"Optional Kubernetes label selector\"},\"limit\":{\"type\":\"integer\",\"description\":\"Maximum number of WorkflowTemplates to return; defaults to 50 when omitted\",\"minimum\":1,\"maximum\":200},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"}},\"additionalProperties\":false}")),
+		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"properties\":{\"continue\":{\"type\":\"string\",\"description\":\"Opaque continuation token returned by a previous call; replay with the same filters and limit\"},\"label_selector\":{\"type\":\"string\",\"description\":\"Optional Kubernetes label selector\"},\"limit\":{\"type\":\"integer\",\"description\":\"Maximum number of WorkflowTemplates to return; defaults to 50 when omitted\",\"default\":50,\"minimum\":1,\"maximum\":200},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"}},\"additionalProperties\":false}")),
 		Name:         "list_workflow_templates",
 		OutputSchema: jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"templates\",\"count\",\"source\",\"has_more\"],\"properties\":{\"continue\":{\"type\":\"string\",\"description\":\"Opaque continuation token for the next page; replay it with the same filters and limit\"},\"count\":{\"type\":\"integer\",\"description\":\"Number of WorkflowTemplates returned\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"has_more\":{\"type\":\"boolean\",\"description\":\"Whether another page is available\"},\"label_selector\":{\"type\":\"string\",\"description\":\"Applied Kubernetes label selector\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace queried\"},\"source\":{\"type\":\"string\",\"description\":\"Data source; always argo for live results\"},\"templates\":{\"type\":\"array\",\"description\":\"Matching WorkflowTemplates\",\"items\":{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"entrypoint\":{\"type\":\"string\",\"description\":\"Default template entrypoint\"},\"name\":{\"type\":\"string\",\"description\":\"WorkflowTemplate name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace\"}},\"additionalProperties\":false}}},\"additionalProperties\":false}")),
 		Title:        stringPtr("List Workflow Templates"),
@@ -671,7 +671,7 @@ func (a *MCPAdapter) generatedToolCatalog() []*ToolInfo {
 	}, &ToolInfo{
 		Annotations:  jsontext.Value([]byte("{\"readOnlyHint\":true}")),
 		Description:  stringPtr("List ClusterWorkflowTemplates (cluster-scoped)"),
-		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"properties\":{\"continue\":{\"type\":\"string\",\"description\":\"Opaque continuation token returned by a previous call; replay with the same filters and limit\"},\"label_selector\":{\"type\":\"string\",\"description\":\"Optional Kubernetes label selector\"},\"limit\":{\"type\":\"integer\",\"description\":\"Maximum number of ClusterWorkflowTemplates to return; defaults to 50 when omitted\",\"minimum\":1,\"maximum\":200}},\"additionalProperties\":false}")),
+		InputSchema:  jsontext.Value([]byte("{\"type\":\"object\",\"properties\":{\"continue\":{\"type\":\"string\",\"description\":\"Opaque continuation token returned by a previous call; replay with the same filters and limit\"},\"label_selector\":{\"type\":\"string\",\"description\":\"Optional Kubernetes label selector\"},\"limit\":{\"type\":\"integer\",\"description\":\"Maximum number of ClusterWorkflowTemplates to return; defaults to 50 when omitted\",\"default\":50,\"minimum\":1,\"maximum\":200}},\"additionalProperties\":false}")),
 		Name:         "list_cluster_workflow_templates",
 		OutputSchema: jsontext.Value([]byte("{\"type\":\"object\",\"required\":[\"templates\",\"count\",\"source\",\"has_more\"],\"properties\":{\"continue\":{\"type\":\"string\",\"description\":\"Opaque continuation token for the next page; replay it with the same filters and limit\"},\"count\":{\"type\":\"integer\",\"description\":\"Number of ClusterWorkflowTemplates returned\",\"minimum\":-9223372036854775808,\"maximum\":9223372036854775807},\"has_more\":{\"type\":\"boolean\",\"description\":\"Whether another page is available\"},\"label_selector\":{\"type\":\"string\",\"description\":\"Applied Kubernetes label selector\"},\"source\":{\"type\":\"string\",\"description\":\"Data source; always argo for live results\"},\"templates\":{\"type\":\"array\",\"description\":\"Matching ClusterWorkflowTemplates\",\"items\":{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"entrypoint\":{\"type\":\"string\",\"description\":\"Default template entrypoint\"},\"name\":{\"type\":\"string\",\"description\":\"ClusterWorkflowTemplate name\"}},\"additionalProperties\":false}}},\"additionalProperties\":false}")),
 		Title:        stringPtr("List Cluster Workflow Templates"),
@@ -1460,7 +1460,7 @@ func listWorkflowsInputRecovery(err error, raw jsontext.Value) string {
 		message = strings.TrimSpace(err.Error())
 	}
 	_ = raw
-	example := "{}"
+	example := "{\"limit\":50}"
 	if field := missingFieldFromMessage(message); field != "" {
 		return fmt.Sprintf("Include required field %q. Example: %s", field, example)
 	}
@@ -1490,7 +1490,7 @@ func getWorkflowLogsInputRecovery(err error, raw jsontext.Value) string {
 		message = strings.TrimSpace(err.Error())
 	}
 	_ = raw
-	example := "{\"container\":\"example\",\"max_lines\":0,\"workflow_name\":\"example\"}"
+	example := "{\"container\":\"main\",\"max_lines\":200,\"workflow_name\":\"example\"}"
 	if field := missingFieldFromMessage(message); field != "" {
 		return fmt.Sprintf("Include required field %q. Example: %s", field, example)
 	}
@@ -1535,7 +1535,7 @@ func listCronWorkflowsInputRecovery(err error, raw jsontext.Value) string {
 		message = strings.TrimSpace(err.Error())
 	}
 	_ = raw
-	example := "{}"
+	example := "{\"limit\":50}"
 	if field := missingFieldFromMessage(message); field != "" {
 		return fmt.Sprintf("Include required field %q. Example: %s", field, example)
 	}
@@ -1565,7 +1565,7 @@ func getCronHistoryInputRecovery(err error, raw jsontext.Value) string {
 		message = strings.TrimSpace(err.Error())
 	}
 	_ = raw
-	example := "{\"name\":\"example\"}"
+	example := "{\"limit\":10,\"name\":\"example\"}"
 	if field := missingFieldFromMessage(message); field != "" {
 		return fmt.Sprintf("Include required field %q. Example: %s", field, example)
 	}
@@ -1595,7 +1595,7 @@ func listWorkflowTemplatesInputRecovery(err error, raw jsontext.Value) string {
 		message = strings.TrimSpace(err.Error())
 	}
 	_ = raw
-	example := "{}"
+	example := "{\"limit\":50}"
 	if field := missingFieldFromMessage(message); field != "" {
 		return fmt.Sprintf("Include required field %q. Example: %s", field, example)
 	}
@@ -1625,7 +1625,7 @@ func listClusterWorkflowTemplatesInputRecovery(err error, raw jsontext.Value) st
 		message = strings.TrimSpace(err.Error())
 	}
 	_ = raw
-	example := "{}"
+	example := "{\"limit\":50}"
 	if field := missingFieldFromMessage(message); field != "" {
 		return fmt.Sprintf("Include required field %q. Example: %s", field, example)
 	}
@@ -1737,9 +1737,17 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", listWorkflowsInputRecovery(err, arguments)))
 		}
 		{
+			if _, ok := rawFields["limit"]; !ok {
+				payload.Limit = 50
+			}
+		}
+		{
 			if err := validateMCPPayloadEnum(rawFields, "status", true, "Running", "Succeeded", "Failed", "Pending", "Error"); err != nil {
 				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", listWorkflowsInputRecovery(err, arguments)))
 			}
+		}
+		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"properties\":{\"continue\":{\"type\":\"string\",\"description\":\"Opaque continuation token returned by a previous call; replay with the same filters and limit\"},\"limit\":{\"type\":\"integer\",\"description\":\"Maximum number of workflows to return; defaults to 50 when omitted\",\"default\":50,\"minimum\":1,\"maximum\":200},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace to query; defaults to the server's ARGO_NAMESPACE\"},\"status\":{\"type\":\"string\",\"description\":\"Optional workflow status filter\",\"enum\":[\"Running\",\"Succeeded\",\"Failed\",\"Pending\",\"Error\"]}},\"additionalProperties\":false}"); err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", listWorkflowsInputRecovery(err, arguments)))
 		}
 		result, err := a.service.ListWorkflows(ctx, payload)
 		if err != nil {
@@ -1772,6 +1780,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 			if err := validateMCPPayloadRequired(rawFields, "name", false); err != nil {
 				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowInputRecovery(err, arguments)))
 			}
+		}
+		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Exact workflow name; use list_workflows to discover names\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"}},\"additionalProperties\":false}"); err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowInputRecovery(err, arguments)))
 		}
 		result, err := a.service.GetWorkflow(ctx, payload)
 		if err != nil {
@@ -1813,6 +1824,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowLogsInputRecovery(err, arguments)))
 			}
 		}
+		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"workflow_name\"],\"properties\":{\"container\":{\"type\":\"string\",\"description\":\"Container name; defaults to main\",\"default\":\"main\"},\"max_lines\":{\"type\":\"integer\",\"description\":\"Maximum lines to return; zero returns all lines\",\"default\":200,\"minimum\":0,\"maximum\":9223372036854775807},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"},\"pod_name\":{\"type\":\"string\",\"description\":\"Optional exact pod name; omit to collect logs across workflow pods\"},\"search\":{\"type\":\"string\",\"description\":\"Optional case-insensitive search across log text and pod names\"},\"workflow_name\":{\"type\":\"string\",\"description\":\"Exact workflow name; use list_workflows to discover names\"}},\"additionalProperties\":false}"); err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowLogsInputRecovery(err, arguments)))
+		}
 		result, err := a.service.GetWorkflowLogs(ctx, payload)
 		if err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, err)
@@ -1848,6 +1862,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", terminateWorkflowInputRecovery(err, arguments)))
 			}
 		}
+		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"name\",\"reason\"],\"properties\":{\"confirmation_token\":{\"type\":\"string\",\"description\":\"Single-use token returned by a matching dry-run preview\"},\"dry_run\":{\"type\":\"boolean\",\"description\":\"Preview mode; defaults to true and does not call Argo\"},\"name\":{\"type\":\"string\",\"description\":\"Exact workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"},\"reason\":{\"type\":\"string\",\"description\":\"Operator-visible reason for termination and part of confirmation scope\"}},\"additionalProperties\":false}"); err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", terminateWorkflowInputRecovery(err, arguments)))
+		}
 		result, err := a.service.TerminateWorkflow(ctx, payload)
 		if err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, err)
@@ -1880,6 +1897,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", retryWorkflowInputRecovery(err, arguments)))
 			}
 		}
+		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Exact workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"},\"restart_successful\":{\"type\":\"boolean\",\"description\":\"Also restart successful steps; defaults to false\"}},\"additionalProperties\":false}"); err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", retryWorkflowInputRecovery(err, arguments)))
+		}
 		result, err := a.service.RetryWorkflow(ctx, payload)
 		if err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, err)
@@ -1900,7 +1920,19 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		return false, stream.SendAndClose(ctx, final)
 	case "list_cron_workflows":
 		var payload *argo.ListCronWorkflowsPayload
+		rawFields, err := decodeMCPPayloadFields(arguments)
+		if err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", listCronWorkflowsInputRecovery(err, arguments)))
+		}
 		if err := decodeMCPPayloadStrict(arguments, &payload); err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", listCronWorkflowsInputRecovery(err, arguments)))
+		}
+		{
+			if _, ok := rawFields["limit"]; !ok {
+				payload.Limit = 50
+			}
+		}
+		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"properties\":{\"continue\":{\"type\":\"string\",\"description\":\"Opaque continuation token returned by a previous call; replay with the same filters and limit\"},\"limit\":{\"type\":\"integer\",\"description\":\"Maximum number of CronWorkflows to return; defaults to 50 when omitted\",\"default\":50,\"minimum\":1,\"maximum\":200},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"},\"suspended\":{\"type\":\"boolean\",\"description\":\"Optional suspension-state filter\"}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", listCronWorkflowsInputRecovery(err, arguments)))
 		}
 		result, err := a.service.ListCronWorkflows(ctx, payload)
@@ -1935,6 +1967,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getCronWorkflowInputRecovery(err, arguments)))
 			}
 		}
+		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Exact CronWorkflow name; use list_cron_workflows to discover names\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"}},\"additionalProperties\":false}"); err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getCronWorkflowInputRecovery(err, arguments)))
+		}
 		result, err := a.service.GetCronWorkflow(ctx, payload)
 		if err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, err)
@@ -1963,9 +1998,17 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getCronHistoryInputRecovery(err, arguments)))
 		}
 		{
+			if _, ok := rawFields["limit"]; !ok {
+				payload.Limit = 10
+			}
+		}
+		{
 			if err := validateMCPPayloadRequired(rawFields, "name", false); err != nil {
 				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getCronHistoryInputRecovery(err, arguments)))
 			}
+		}
+		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"continue\":{\"type\":\"string\",\"description\":\"Opaque continuation token returned by a previous call; replay with the same limit\"},\"limit\":{\"type\":\"integer\",\"description\":\"Maximum history entries to return; defaults to 10 when omitted\",\"default\":10,\"minimum\":1,\"maximum\":200},\"name\":{\"type\":\"string\",\"description\":\"Exact CronWorkflow name; use list_cron_workflows to discover names\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"}},\"additionalProperties\":false}"); err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getCronHistoryInputRecovery(err, arguments)))
 		}
 		result, err := a.service.GetCronHistory(ctx, payload)
 		if err != nil {
@@ -2002,6 +2045,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", toggleCronSuspensionInputRecovery(err, arguments)))
 			}
 		}
+		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"name\",\"suspend\"],\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Exact CronWorkflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"},\"suspend\":{\"type\":\"boolean\",\"description\":\"True to suspend scheduling; false to resume scheduling\"}},\"additionalProperties\":false}"); err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", toggleCronSuspensionInputRecovery(err, arguments)))
+		}
 		result, err := a.service.ToggleCronSuspension(ctx, payload)
 		if err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, err)
@@ -2022,7 +2068,19 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		return false, stream.SendAndClose(ctx, final)
 	case "list_workflow_templates":
 		var payload *argo.ListWorkflowTemplatesPayload
+		rawFields, err := decodeMCPPayloadFields(arguments)
+		if err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", listWorkflowTemplatesInputRecovery(err, arguments)))
+		}
 		if err := decodeMCPPayloadStrict(arguments, &payload); err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", listWorkflowTemplatesInputRecovery(err, arguments)))
+		}
+		{
+			if _, ok := rawFields["limit"]; !ok {
+				payload.Limit = 50
+			}
+		}
+		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"properties\":{\"continue\":{\"type\":\"string\",\"description\":\"Opaque continuation token returned by a previous call; replay with the same filters and limit\"},\"label_selector\":{\"type\":\"string\",\"description\":\"Optional Kubernetes label selector\"},\"limit\":{\"type\":\"integer\",\"description\":\"Maximum number of WorkflowTemplates to return; defaults to 50 when omitted\",\"default\":50,\"minimum\":1,\"maximum\":200},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", listWorkflowTemplatesInputRecovery(err, arguments)))
 		}
 		result, err := a.service.ListWorkflowTemplates(ctx, payload)
@@ -2057,6 +2115,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowTemplateInputRecovery(err, arguments)))
 			}
 		}
+		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Exact WorkflowTemplate name; use list_workflow_templates to discover names\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"}},\"additionalProperties\":false}"); err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowTemplateInputRecovery(err, arguments)))
+		}
 		result, err := a.service.GetWorkflowTemplate(ctx, payload)
 		if err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, err)
@@ -2077,7 +2138,19 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		return false, stream.SendAndClose(ctx, final)
 	case "list_cluster_workflow_templates":
 		var payload *argo.ListClusterWorkflowTemplatesPayload
+		rawFields, err := decodeMCPPayloadFields(arguments)
+		if err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", listClusterWorkflowTemplatesInputRecovery(err, arguments)))
+		}
 		if err := decodeMCPPayloadStrict(arguments, &payload); err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", listClusterWorkflowTemplatesInputRecovery(err, arguments)))
+		}
+		{
+			if _, ok := rawFields["limit"]; !ok {
+				payload.Limit = 50
+			}
+		}
+		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"properties\":{\"continue\":{\"type\":\"string\",\"description\":\"Opaque continuation token returned by a previous call; replay with the same filters and limit\"},\"label_selector\":{\"type\":\"string\",\"description\":\"Optional Kubernetes label selector\"},\"limit\":{\"type\":\"integer\",\"description\":\"Maximum number of ClusterWorkflowTemplates to return; defaults to 50 when omitted\",\"default\":50,\"minimum\":1,\"maximum\":200}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", listClusterWorkflowTemplatesInputRecovery(err, arguments)))
 		}
 		result, err := a.service.ListClusterWorkflowTemplates(ctx, payload)
@@ -2111,6 +2184,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 			if err := validateMCPPayloadRequired(rawFields, "name", false); err != nil {
 				return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getClusterWorkflowTemplateInputRecovery(err, arguments)))
 			}
+		}
+		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Exact ClusterWorkflowTemplate name; use list_cluster_workflow_templates to discover names\"}},\"additionalProperties\":false}"); err != nil {
+			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getClusterWorkflowTemplateInputRecovery(err, arguments)))
 		}
 		result, err := a.service.GetClusterWorkflowTemplate(ctx, payload)
 		if err != nil {

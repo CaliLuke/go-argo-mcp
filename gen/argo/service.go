@@ -190,7 +190,7 @@ type GetCronHistoryPayload struct {
 	// Exact CronWorkflow name; use list_cron_workflows to discover names
 	Name string `json:"name"`
 	// Maximum history entries to return; defaults to 10 when omitted
-	Limit *int `json:"limit,omitempty"`
+	Limit int `json:"limit,omitempty"`
 	// Opaque continuation token returned by a previous call; replay with the same
 	// limit
 	Continue *string `json:"continue,omitempty"`
@@ -247,7 +247,7 @@ type ListClusterWorkflowTemplatesPayload struct {
 	LabelSelector *string `json:"label_selector,omitempty"`
 	// Maximum number of ClusterWorkflowTemplates to return; defaults to 50 when
 	// omitted
-	Limit *int `json:"limit,omitempty"`
+	Limit int `json:"limit,omitempty"`
 	// Opaque continuation token returned by a previous call; replay with the same
 	// filters and limit
 	Continue *string `json:"continue,omitempty"`
@@ -279,7 +279,7 @@ type ListCronWorkflowsPayload struct {
 	// Optional suspension-state filter
 	Suspended *bool `json:"suspended,omitempty"`
 	// Maximum number of CronWorkflows to return; defaults to 50 when omitted
-	Limit *int `json:"limit,omitempty"`
+	Limit int `json:"limit,omitempty"`
 	// Opaque continuation token returned by a previous call; replay with the same
 	// filters and limit
 	Continue *string `json:"continue,omitempty"`
@@ -313,7 +313,7 @@ type ListWorkflowTemplatesPayload struct {
 	// Optional Kubernetes label selector
 	LabelSelector *string `json:"label_selector,omitempty"`
 	// Maximum number of WorkflowTemplates to return; defaults to 50 when omitted
-	Limit *int `json:"limit,omitempty"`
+	Limit int `json:"limit,omitempty"`
 	// Opaque continuation token returned by a previous call; replay with the same
 	// filters and limit
 	Continue *string `json:"continue,omitempty"`
@@ -347,7 +347,7 @@ type ListWorkflowsPayload struct {
 	// Optional workflow status filter
 	Status *string `json:"status,omitempty"`
 	// Maximum number of workflows to return; defaults to 50 when omitted
-	Limit *int `json:"limit,omitempty"`
+	Limit int `json:"limit,omitempty"`
 	// Opaque continuation token returned by a previous call; replay with the same
 	// filters and limit
 	Continue *string `json:"continue,omitempty"`

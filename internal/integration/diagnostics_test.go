@@ -10,6 +10,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	appserver "github.com/CaliLuke/go-argo-mcp/internal/server"
+	"github.com/CaliLuke/go-argo-mcp/internal/version"
 )
 
 func TestDiagnosticToolsAcrossProductionTransports(t *testing.T) {
@@ -37,7 +38,7 @@ func TestDiagnosticToolsAcrossProductionTransports(t *testing.T) {
 			defer cleanup()
 			defer session.Close()
 			info := session.InitializeResult().ServerInfo
-			if info.Name != "go-argo-mcp" || info.Version != "0.3.0" {
+			if info.Name != "go-argo-mcp" || info.Version != version.MCPVersion {
 				t.Fatalf("identity=%+v", info)
 			}
 			listed, err := session.ListTools(testContext(t), nil)

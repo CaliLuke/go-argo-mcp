@@ -555,7 +555,7 @@ requires the CLI version and MCP initialization identity to match. Use the same
 check on a downloaded release binary:
 
 ```sh
-go run ./cmd/verify-release -binary /path/to/go-argo-mcp -version 0.3.0
+go run ./cmd/verify-release -binary /path/to/go-argo-mcp -version 0.3.1
 ```
 
 Pushing a `v*` tag creates GitHub release archives for macOS, Linux, and Windows. The release workflow then renders a checksummed macOS cask and multi-platform formula with `cmd/render-homebrew-formula` and commits both to `CaliLuke/homebrew-tap`. The repository must define a `HOMEBREW_TAP_GITHUB_TOKEN` Actions secret. Use a fine-grained personal access token limited to the `CaliLuke/homebrew-tap` repository with Contents read and write permission and Metadata read permission.

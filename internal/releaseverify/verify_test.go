@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/CaliLuke/go-argo-mcp/internal/version"
 )
 
 func TestVerifyRejectsCLIIdentityMismatchAndSanitizesEnvironment(t *testing.T) {
@@ -67,13 +69,13 @@ func TestVerifyOfficialSDKHandshakeAcceptsMatchingAndRejectsMCPMismatch(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	matching := buildCandidate(t, root, "0.3.0")
-	if verifyErr := Verify(context.Background(), matching, "0.3.0"); verifyErr != nil {
+	matching := buildCandidate(t, root, version.MCPVersion)
+	if verifyErr := Verify(context.Background(), matching, version.MCPVersion); verifyErr != nil {
 		t.Fatalf("matching candidate: %v", verifyErr)
 	}
 	mismatch := buildCandidate(t, root, "9.9.9")
 	err = Verify(context.Background(), mismatch, "9.9.9")
-	if err == nil || !strings.Contains(err.Error(), "expected go-argo-mcp 9.9.9") || !strings.Contains(err.Error(), "actual go-argo-mcp 0.3.0") {
+	if err == nil || !strings.Contains(err.Error(), "expected go-argo-mcp 9.9.9") || !strings.Contains(err.Error(), "actual go-argo-mcp "+version.MCPVersion) {
 		t.Fatalf("mismatch error = %v", err)
 	}
 }

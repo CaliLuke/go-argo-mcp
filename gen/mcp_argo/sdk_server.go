@@ -69,7 +69,7 @@ func NewSDKServer(service argo.Service, opts *SDKServerOptions) (*SDKServer, err
 		CompatibilityVersion: 3,
 		Implementation: mcpsdk.Implementation{
 			Name:    "go-argo-mcp",
-			Version: "0.3.0",
+			Version: "0.3.1",
 		},
 		Options: bridgeOptions,
 		Prompts: func() ([]sdkbridge.PromptBinding, error) {

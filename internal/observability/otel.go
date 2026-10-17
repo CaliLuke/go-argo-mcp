@@ -9,9 +9,9 @@ import (
 	"time"
 
 	loomotel "github.com/CaliLuke/loom/observability/otel"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	otellog "go.opentelemetry.io/otel/log"
-	otelglobal "go.opentelemetry.io/otel/log/global"
 )
 
 type Config struct {
@@ -98,7 +98,7 @@ func (r *Runtime) Emit(ctx context.Context, loggerName, body string, attrs ...at
 	if len(attrs) > 0 {
 		record.AddAttributes(attrs...)
 	}
-	otelglobal.Logger(loggerName).Emit(ctx, record)
+	otel.Logger(loggerName).Emit(ctx, record)
 }
 
 func (r *Runtime) Shutdown(ctx context.Context) error {

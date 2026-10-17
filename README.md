@@ -275,7 +275,7 @@ Verify the installed binary:
 go-argo-mcp --version
 ```
 
-Or build it directly with Go 1.27.1:
+Or build it directly with Go 1.27.2:
 
 ```bash
 go install github.com/CaliLuke/go-argo-mcp/cmd/go-argo-mcp@latest

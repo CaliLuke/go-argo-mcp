@@ -17,7 +17,6 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	otellog "go.opentelemetry.io/otel/log"
-	logglobal "go.opentelemetry.io/otel/log/global"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -56,7 +55,7 @@ func (*exportingTelemetry) Emit(ctx context.Context, name, body string, attrs ..
 	record.SetTimestamp(time.Now())
 	record.SetBody(attribute.StringValue(body))
 	record.AddAttributes(attrs...)
-	logglobal.Logger(name).Emit(ctx, record)
+	otel.Logger(name).Emit(ctx, record)
 }
 func (*exportingTelemetry) Shutdown(context.Context) error { return nil }
 
@@ -314,11 +313,11 @@ func TestProductionHTTPPathsExportNoCredentialValues(t *testing.T) {
 	otel.SetTracerProvider(traceProvider)
 	logExporter := &capturedLogExporter{}
 	logProvider := sdklog.NewLoggerProvider(sdklog.WithProcessor(sdklog.NewSimpleProcessor(logExporter)))
-	previousLogs := logglobal.GetLoggerProvider()
-	logglobal.SetLoggerProvider(logProvider)
+	previousLogs := otel.GetLoggerProvider()
+	otel.SetLoggerProvider(logProvider)
 	t.Cleanup(func() {
 		otel.SetTracerProvider(previousTrace)
-		logglobal.SetLoggerProvider(previousLogs)
+		otel.SetLoggerProvider(previousLogs)
 		_ = traceProvider.Shutdown(context.Background())
 		_ = logProvider.Shutdown(context.Background())
 	})

@@ -108,19 +108,19 @@ type ActionResult struct {
 	// Human-readable outcome
 	Message string `json:"message"`
 	// Kubernetes namespace
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Target resource name
-	Name *string `json:"name,omitempty"`
+	Name *string `json:"name,omitzero"`
 	// Termination reason
-	Reason *string `json:"reason,omitempty"`
+	Reason *string `json:"reason,omitzero"`
 	// Exact destructive action that would be performed
-	Preview *string `json:"preview,omitempty"`
+	Preview *string `json:"preview,omitzero"`
 	// Required next step when the action did not run
-	Instructions *string `json:"instructions,omitempty"`
+	Instructions *string `json:"instructions,omitzero"`
 	// Single-use token scoped to the previewed destructive action
-	ConfirmationToken *string `json:"confirmation_token,omitempty"`
+	ConfirmationToken *string `json:"confirmation_token,omitzero"`
 	// Whether successful workflow nodes were also restarted
-	RestartSuccessful *bool `json:"restart_successful,omitempty"`
+	RestartSuccessful *bool `json:"restart_successful,omitzero"`
 }
 
 // ArchivedWorkflowDetailResult is the result type of the argo service
@@ -135,11 +135,11 @@ type ArchivedWorkflowDetailResult struct {
 	// Workflow phase
 	Status string `json:"status"`
 	// RFC3339 start timestamp
-	StartedAt *string `json:"started_at,omitempty"`
+	StartedAt *string `json:"started_at,omitzero"`
 	// RFC3339 finish timestamp
-	FinishedAt *string `json:"finished_at,omitempty"`
+	FinishedAt *string `json:"finished_at,omitzero"`
 	// Diagnostic message
-	Message *string `json:"message,omitempty"`
+	Message *string `json:"message,omitzero"`
 	// Selected labels
 	Labels map[string]string `json:"labels"`
 	// Selected annotations
@@ -162,9 +162,9 @@ type ArchivedWorkflowSummary struct {
 	// Workflow phase
 	Status string `json:"status"`
 	// RFC3339 start timestamp
-	StartedAt *string `json:"started_at,omitempty"`
+	StartedAt *string `json:"started_at,omitzero"`
 	// RFC3339 finish timestamp
-	FinishedAt *string `json:"finished_at,omitempty"`
+	FinishedAt *string `json:"finished_at,omitzero"`
 }
 
 // ArtifactContentResult is the result type of the argo service
@@ -187,15 +187,15 @@ type ArtifactContentResult struct {
 	// Original artifact bytes returned
 	ReturnedBytes int `json:"returned_bytes"`
 	// Next byte offset; present only when more bytes remain
-	NextOffset *int `json:"next_offset,omitempty"`
+	NextOffset *int `json:"next_offset,omitzero"`
 	// Whether more artifact bytes remain
 	HasMore bool `json:"has_more"`
 	// Data source; always argo
 	Source string `json:"source"`
 	// Archive UID when reading retained workflow data
-	ArchiveUID *string `json:"archive_uid,omitempty"`
+	ArchiveUID *string `json:"archive_uid,omitzero"`
 	// Pagination or retention guidance
-	Note *string `json:"note,omitempty"`
+	Note *string `json:"note,omitzero"`
 }
 
 // ClusterWorkflowTemplateDetailResult is the result type of the argo service
@@ -204,9 +204,9 @@ type ClusterWorkflowTemplateDetailResult struct {
 	// ClusterWorkflowTemplate name
 	Name string `json:"name"`
 	// Default template entrypoint
-	Entrypoint *string `json:"entrypoint,omitempty"`
+	Entrypoint *string `json:"entrypoint,omitzero"`
 	// Template definitions available in this resource
-	TemplateNames []string `json:"template_names,omitempty"`
+	TemplateNames []string `json:"template_names,omitzero"`
 	// Data source; always argo for live results
 	Source string `json:"source"`
 }
@@ -215,7 +215,7 @@ type ClusterWorkflowTemplateSummary struct {
 	// ClusterWorkflowTemplate name
 	Name string `json:"name"`
 	// Default template entrypoint
-	Entrypoint *string `json:"entrypoint,omitempty"`
+	Entrypoint *string `json:"entrypoint,omitzero"`
 }
 
 type ContainerDiagnostic struct {
@@ -239,11 +239,11 @@ type ContainerState struct {
 	// State message
 	Message string `json:"message"`
 	// Termination exit code
-	ExitCode *int `json:"exit_code,omitempty"`
+	ExitCode *int `json:"exit_code,omitzero"`
 	// RFC3339 start timestamp
-	StartedAt *string `json:"started_at,omitempty"`
+	StartedAt *string `json:"started_at,omitzero"`
 	// RFC3339 finish timestamp
-	FinishedAt *string `json:"finished_at,omitempty"`
+	FinishedAt *string `json:"finished_at,omitzero"`
 }
 
 // CreatedWorkflowResult is the result type of the argo service
@@ -261,13 +261,13 @@ type CronHistoryEntry struct {
 	// Generated workflow name
 	Name string `json:"name"`
 	// Workflow phase
-	Status *string `json:"status,omitempty"`
+	Status *string `json:"status,omitzero"`
 	// RFC3339 start timestamp
-	StartedAt *string `json:"started_at,omitempty"`
+	StartedAt *string `json:"started_at,omitzero"`
 	// RFC3339 finish timestamp
-	FinishedAt *string `json:"finished_at,omitempty"`
+	FinishedAt *string `json:"finished_at,omitzero"`
 	// Elapsed workflow duration
-	Duration *string `json:"duration,omitempty"`
+	Duration *string `json:"duration,omitzero"`
 }
 
 // CronHistoryResult is the result type of the argo service GetCronHistory
@@ -276,7 +276,7 @@ type CronHistoryResult struct {
 	// CronWorkflow name
 	Name string `json:"name"`
 	// Kubernetes namespace queried
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Recent workflows owned by this CronWorkflow
 	History []*CronHistoryEntry `json:"history"`
 	// Number of history entries returned
@@ -284,7 +284,7 @@ type CronHistoryResult struct {
 	// Data source; always argo for live results
 	Source string `json:"source"`
 	// Opaque continuation token for the next page; replay it with the same limit
-	Continue *string `json:"continue,omitempty"`
+	Continue *string `json:"continue,omitzero"`
 	// Whether another page is available
 	HasMore bool `json:"has_more"`
 }
@@ -295,20 +295,20 @@ type CronWorkflowDetailResult struct {
 	// CronWorkflow name
 	Name string `json:"name"`
 	// Kubernetes namespace
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Legacy single schedule, when configured
-	Schedule *string `json:"schedule,omitempty"`
+	Schedule *string `json:"schedule,omitzero"`
 	// All configured CronWorkflow schedules
-	Schedules []string `json:"schedules,omitempty"`
+	Schedules []string `json:"schedules,omitzero"`
 	// IANA timezone for the schedules
-	Timezone *string `json:"timezone,omitempty"`
+	Timezone *string `json:"timezone,omitzero"`
 	// Whether Argo scheduling is suspended
-	Suspended *bool `json:"suspended,omitempty"`
+	Suspended *bool `json:"suspended,omitzero"`
 	// RFC3339 time Argo last scheduled a workflow
-	LastScheduledTime *string `json:"last_scheduled_time,omitempty"`
+	LastScheduledTime *string `json:"last_scheduled_time,omitzero"`
 	// Next nominal run from the configured schedules; conditions may prevent
 	// execution
-	NextScheduledTime *string `json:"next_scheduled_time,omitempty"`
+	NextScheduledTime *string `json:"next_scheduled_time,omitzero"`
 	// Data source; always argo for live results
 	Source string `json:"source"`
 }
@@ -319,20 +319,20 @@ type CronWorkflowSummary struct {
 	// Kubernetes namespace
 	Namespace string `json:"namespace"`
 	// Legacy single schedule, when configured
-	Schedule *string `json:"schedule,omitempty"`
+	Schedule *string `json:"schedule,omitzero"`
 	// All configured CronWorkflow schedules
-	Schedules []string `json:"schedules,omitempty"`
+	Schedules []string `json:"schedules,omitzero"`
 	// IANA timezone for the schedules
-	Timezone *string `json:"timezone,omitempty"`
+	Timezone *string `json:"timezone,omitzero"`
 	// Whether Argo scheduling is suspended
-	Suspended *bool `json:"suspended,omitempty"`
+	Suspended *bool `json:"suspended,omitzero"`
 }
 
 // GetArchivedWorkflowPayload is the payload type of the argo service
 // GetArchivedWorkflow method.
 type GetArchivedWorkflowPayload struct {
 	// Kubernetes namespace; defaults to ARGO_NAMESPACE
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Archive UID
 	UID string `json:"uid"`
 }
@@ -349,21 +349,21 @@ type GetClusterWorkflowTemplatePayload struct {
 // method.
 type GetCronHistoryPayload struct {
 	// Kubernetes namespace; defaults to the server's ARGO_NAMESPACE
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Exact CronWorkflow name; use list_cron_workflows to discover names
 	Name string `json:"name"`
 	// Maximum history entries to return; defaults to 10 when omitted
-	Limit int `json:"limit,omitempty"`
+	Limit int `json:"limit"`
 	// Opaque continuation token returned by a previous call; replay with the same
 	// limit
-	Continue *string `json:"continue,omitempty"`
+	Continue *string `json:"continue,omitzero"`
 }
 
 // GetCronWorkflowPayload is the payload type of the argo service
 // GetCronWorkflow method.
 type GetCronWorkflowPayload struct {
 	// Kubernetes namespace; defaults to the server's ARGO_NAMESPACE
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Exact CronWorkflow name; use list_cron_workflows to discover names
 	Name string `json:"name"`
 }
@@ -376,94 +376,94 @@ type GetResourceSpecPayload struct {
 	// Exact resource name
 	Name string `json:"name"`
 	// Kubernetes namespace; forbidden for cluster scope
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Spec section
-	Section string `json:"section,omitempty"`
+	Section string `json:"section"`
 	// Exact template name; valid only for templates
-	TemplateName *string `json:"template_name,omitempty"`
+	TemplateName *string `json:"template_name,omitzero"`
 	// Maximum serialized JSON bytes
-	MaxBytes int `json:"max_bytes,omitempty"`
+	MaxBytes int `json:"max_bytes"`
 }
 
 // GetWorkflowArtifactsPayload is the payload type of the argo service
 // GetWorkflowArtifacts method.
 type GetWorkflowArtifactsPayload struct {
 	// Kubernetes namespace; defaults to ARGO_NAMESPACE
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Exact workflow name
 	Name string `json:"name"`
 	// Optional exact node ID
-	NodeID *string `json:"node_id,omitempty"`
+	NodeID *string `json:"node_id,omitzero"`
 	// Archive UID; omit for live workflow data
-	ArchiveUID *string `json:"archive_uid,omitempty"`
+	ArchiveUID *string `json:"archive_uid,omitzero"`
 	// Zero-based offset
-	Offset int `json:"offset,omitempty"`
+	Offset int `json:"offset"`
 	// Maximum artifacts; defaults to 50
-	Limit int `json:"limit,omitempty"`
+	Limit int `json:"limit"`
 }
 
 // GetWorkflowEventsPayload is the payload type of the argo service
 // GetWorkflowEvents method.
 type GetWorkflowEventsPayload struct {
 	// Kubernetes namespace; defaults to ARGO_NAMESPACE
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Exact workflow name
 	Name string `json:"name"`
 	// Maximum observed events; defaults to 50
-	Limit int `json:"limit,omitempty"`
+	Limit int `json:"limit"`
 	// Observation duration in seconds; defaults to 2
-	DurationSeconds int `json:"duration_seconds,omitempty"`
+	DurationSeconds int `json:"duration_seconds"`
 }
 
 // GetWorkflowLogsPayload is the payload type of the argo service
 // GetWorkflowLogs method.
 type GetWorkflowLogsPayload struct {
 	// Kubernetes namespace; defaults to the server's ARGO_NAMESPACE
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Exact workflow name; use list_workflows to discover names
 	WorkflowName string `json:"workflow_name"`
 	// Optional exact pod name; omit to collect logs across workflow pods
-	PodName *string `json:"pod_name,omitempty"`
+	PodName *string `json:"pod_name,omitzero"`
 	// Container name; defaults to main
-	Container string `json:"container,omitempty"`
+	Container string `json:"container"`
 	// Optional case-insensitive search across log text and pod names
-	Search *string `json:"search,omitempty"`
+	Search *string `json:"search,omitzero"`
 	// Maximum lines to return; zero returns all lines
-	MaxLines int `json:"max_lines,omitempty"`
+	MaxLines int `json:"max_lines"`
 	// Log source
-	Source string `json:"source,omitempty"`
+	Source string `json:"source"`
 	// Exact archived node ID
-	NodeID *string `json:"node_id,omitempty"`
+	NodeID *string `json:"node_id,omitzero"`
 	// Archive UID
-	ArchiveUID *string `json:"archive_uid,omitempty"`
+	ArchiveUID *string `json:"archive_uid,omitzero"`
 	// Maximum collected bytes; defaults to 1 MiB
-	MaxBytes int `json:"max_bytes,omitempty"`
+	MaxBytes int `json:"max_bytes"`
 }
 
 // GetWorkflowNodesPayload is the payload type of the argo service
 // GetWorkflowNodes method.
 type GetWorkflowNodesPayload struct {
 	// Kubernetes namespace; defaults to ARGO_NAMESPACE
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Exact workflow name
 	Name string `json:"name"`
 	// Optional exact node phase
-	Phase *string `json:"phase,omitempty"`
+	Phase *string `json:"phase,omitzero"`
 	// Optional exact node ID
-	NodeID *string `json:"node_id,omitempty"`
+	NodeID *string `json:"node_id,omitzero"`
 	// Archive UID; omit for live workflow data
-	ArchiveUID *string `json:"archive_uid,omitempty"`
+	ArchiveUID *string `json:"archive_uid,omitzero"`
 	// Zero-based offset
-	Offset int `json:"offset,omitempty"`
+	Offset int `json:"offset"`
 	// Maximum nodes; defaults to 50
-	Limit int `json:"limit,omitempty"`
+	Limit int `json:"limit"`
 }
 
 // GetWorkflowPayload is the payload type of the argo service GetWorkflow
 // method.
 type GetWorkflowPayload struct {
 	// Kubernetes namespace; defaults to the server's ARGO_NAMESPACE
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Exact workflow name; use list_workflows to discover names
 	Name string `json:"name"`
 }
@@ -472,22 +472,22 @@ type GetWorkflowPayload struct {
 // GetWorkflowPodDiagnostics method.
 type GetWorkflowPodDiagnosticsPayload struct {
 	// Kubernetes namespace; defaults to ARGO_NAMESPACE
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Exact workflow name
 	Name string `json:"name"`
 	// Optional exact pod name
-	PodName *string `json:"pod_name,omitempty"`
+	PodName *string `json:"pod_name,omitzero"`
 	// Maximum pods
-	Limit int `json:"limit,omitempty"`
+	Limit int `json:"limit"`
 	// Opaque Kubernetes continuation token
-	Continue *string `json:"continue,omitempty"`
+	Continue *string `json:"continue,omitzero"`
 }
 
 // GetWorkflowTemplatePayload is the payload type of the argo service
 // GetWorkflowTemplate method.
 type GetWorkflowTemplatePayload struct {
 	// Kubernetes namespace; defaults to the server's ARGO_NAMESPACE
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Exact WorkflowTemplate name; use list_workflow_templates to discover names
 	Name string `json:"name"`
 }
@@ -499,7 +499,7 @@ type LintResult struct {
 	// Manifest resource name
 	Name string `json:"name"`
 	// Resolved namespace for namespaced resources
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// namespaced or cluster
 	Scope string `json:"scope"`
 	// Validation source; always argo
@@ -510,7 +510,7 @@ type LintResult struct {
 // method.
 type LintWorkflowPayload struct {
 	// Kubernetes namespace; defaults to ARGO_NAMESPACE
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Complete Workflow JSON object, maximum 256 KiB
 	ManifestJSON string `json:"manifest_json"`
 }
@@ -520,9 +520,9 @@ type LintWorkflowPayload struct {
 type LintWorkflowTemplatePayload struct {
 	// Optional for namespaced templates and defaults to ARGO_NAMESPACE; forbidden
 	// for cluster scope
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Validate a ClusterWorkflowTemplate; defaults to false
-	ClusterScope bool `json:"cluster_scope,omitempty"`
+	ClusterScope bool `json:"cluster_scope"`
 	// Complete template JSON object, maximum 256 KiB
 	ManifestJSON string `json:"manifest_json"`
 }
@@ -531,15 +531,15 @@ type LintWorkflowTemplatePayload struct {
 // ListArchivedWorkflows method.
 type ListArchivedWorkflowsPayload struct {
 	// Kubernetes namespace; defaults to ARGO_NAMESPACE
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Optional Kubernetes label selector
-	LabelSelector *string `json:"label_selector,omitempty"`
+	LabelSelector *string `json:"label_selector,omitzero"`
 	// Optional workflow name prefix
-	NamePrefix *string `json:"name_prefix,omitempty"`
+	NamePrefix *string `json:"name_prefix,omitzero"`
 	// Maximum archived workflows; defaults to 50
-	Limit int `json:"limit,omitempty"`
+	Limit int `json:"limit"`
 	// Opaque continuation token
-	Continue *string `json:"continue,omitempty"`
+	Continue *string `json:"continue,omitzero"`
 }
 
 // ListArchivedWorkflowsResult is the result type of the argo service
@@ -550,7 +550,7 @@ type ListArchivedWorkflowsResult struct {
 	// Items returned
 	Count int `json:"count"`
 	// Opaque continuation token
-	Continue *string `json:"continue,omitempty"`
+	Continue *string `json:"continue,omitzero"`
 	// Whether another page is available
 	HasMore bool `json:"has_more"`
 }
@@ -559,13 +559,13 @@ type ListArchivedWorkflowsResult struct {
 // ListClusterWorkflowTemplates method.
 type ListClusterWorkflowTemplatesPayload struct {
 	// Optional Kubernetes label selector
-	LabelSelector *string `json:"label_selector,omitempty"`
+	LabelSelector *string `json:"label_selector,omitzero"`
 	// Maximum number of ClusterWorkflowTemplates to return; defaults to 50 when
 	// omitted
-	Limit int `json:"limit,omitempty"`
+	Limit int `json:"limit"`
 	// Opaque continuation token returned by a previous call; replay with the same
 	// filters and limit
-	Continue *string `json:"continue,omitempty"`
+	Continue *string `json:"continue,omitzero"`
 }
 
 // ListClusterWorkflowTemplatesResult is the result type of the argo service
@@ -576,12 +576,12 @@ type ListClusterWorkflowTemplatesResult struct {
 	// Number of ClusterWorkflowTemplates returned
 	Count int `json:"count"`
 	// Applied Kubernetes label selector
-	LabelSelector *string `json:"label_selector,omitempty"`
+	LabelSelector *string `json:"label_selector,omitzero"`
 	// Data source; always argo for live results
 	Source string `json:"source"`
 	// Opaque continuation token for the next page; replay it with the same filters
 	// and limit
-	Continue *string `json:"continue,omitempty"`
+	Continue *string `json:"continue,omitzero"`
 	// Whether another page is available
 	HasMore bool `json:"has_more"`
 }
@@ -590,14 +590,14 @@ type ListClusterWorkflowTemplatesResult struct {
 // ListCronWorkflows method.
 type ListCronWorkflowsPayload struct {
 	// Kubernetes namespace; defaults to the server's ARGO_NAMESPACE
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Optional suspension-state filter
-	Suspended *bool `json:"suspended,omitempty"`
+	Suspended *bool `json:"suspended,omitzero"`
 	// Maximum number of CronWorkflows to return; defaults to 50 when omitted
-	Limit int `json:"limit,omitempty"`
+	Limit int `json:"limit"`
 	// Opaque continuation token returned by a previous call; replay with the same
 	// filters and limit
-	Continue *string `json:"continue,omitempty"`
+	Continue *string `json:"continue,omitzero"`
 }
 
 // ListCronWorkflowsResult is the result type of the argo service
@@ -608,14 +608,14 @@ type ListCronWorkflowsResult struct {
 	// Number of CronWorkflows returned
 	Count int `json:"count"`
 	// Kubernetes namespace queried
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Applied suspension filter
-	Suspended *bool `json:"suspended,omitempty"`
+	Suspended *bool `json:"suspended,omitzero"`
 	// Data source; always argo for live results
 	Source string `json:"source"`
 	// Opaque continuation token for the next page; replay it with the same filters
 	// and limit
-	Continue *string `json:"continue,omitempty"`
+	Continue *string `json:"continue,omitzero"`
 	// Whether another page is available
 	HasMore bool `json:"has_more"`
 }
@@ -624,14 +624,14 @@ type ListCronWorkflowsResult struct {
 // ListWorkflowTemplates method.
 type ListWorkflowTemplatesPayload struct {
 	// Kubernetes namespace; defaults to the server's ARGO_NAMESPACE
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Optional Kubernetes label selector
-	LabelSelector *string `json:"label_selector,omitempty"`
+	LabelSelector *string `json:"label_selector,omitzero"`
 	// Maximum number of WorkflowTemplates to return; defaults to 50 when omitted
-	Limit int `json:"limit,omitempty"`
+	Limit int `json:"limit"`
 	// Opaque continuation token returned by a previous call; replay with the same
 	// filters and limit
-	Continue *string `json:"continue,omitempty"`
+	Continue *string `json:"continue,omitzero"`
 }
 
 // ListWorkflowTemplatesResult is the result type of the argo service
@@ -642,14 +642,14 @@ type ListWorkflowTemplatesResult struct {
 	// Number of WorkflowTemplates returned
 	Count int `json:"count"`
 	// Kubernetes namespace queried
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Applied Kubernetes label selector
-	LabelSelector *string `json:"label_selector,omitempty"`
+	LabelSelector *string `json:"label_selector,omitzero"`
 	// Data source; always argo for live results
 	Source string `json:"source"`
 	// Opaque continuation token for the next page; replay it with the same filters
 	// and limit
-	Continue *string `json:"continue,omitempty"`
+	Continue *string `json:"continue,omitzero"`
 	// Whether another page is available
 	HasMore bool `json:"has_more"`
 }
@@ -658,14 +658,14 @@ type ListWorkflowTemplatesResult struct {
 // method.
 type ListWorkflowsPayload struct {
 	// Kubernetes namespace to query; defaults to the server's ARGO_NAMESPACE
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Optional workflow status filter
-	Status *string `json:"status,omitempty"`
+	Status *string `json:"status,omitzero"`
 	// Maximum number of workflows to return; defaults to 50 when omitted
-	Limit int `json:"limit,omitempty"`
+	Limit int `json:"limit"`
 	// Opaque continuation token returned by a previous call; replay with the same
 	// filters and limit
-	Continue *string `json:"continue,omitempty"`
+	Continue *string `json:"continue,omitzero"`
 }
 
 // ListWorkflowsResult is the result type of the argo service ListWorkflows
@@ -676,14 +676,14 @@ type ListWorkflowsResult struct {
 	// Number of workflows returned
 	Count int `json:"count"`
 	// Kubernetes namespace queried
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Applied workflow status filter
-	Status *string `json:"status,omitempty"`
+	Status *string `json:"status,omitzero"`
 	// Data source; always argo for live results
 	Source string `json:"source"`
 	// Opaque continuation token for the next page; replay it with the same filters
 	// and limit
-	Continue *string `json:"continue,omitempty"`
+	Continue *string `json:"continue,omitzero"`
 	// Whether another page is available
 	HasMore bool `json:"has_more"`
 }
@@ -718,7 +718,7 @@ type PodDiagnosticEvent struct {
 // ReadWorkflowArtifact method.
 type ReadWorkflowArtifactPayload struct {
 	// Kubernetes namespace; defaults to ARGO_NAMESPACE
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Exact workflow name
 	Name string `json:"name"`
 	// Exact workflow node ID
@@ -726,13 +726,13 @@ type ReadWorkflowArtifactPayload struct {
 	// Exact declared artifact name
 	ArtifactName string `json:"artifact_name"`
 	// Artifact direction
-	Direction string `json:"direction,omitempty"`
+	Direction string `json:"direction"`
 	// Archive UID; omit for live workflow data
-	ArchiveUID *string `json:"archive_uid,omitempty"`
+	ArchiveUID *string `json:"archive_uid,omitzero"`
 	// Byte offset
-	OffsetBytes int `json:"offset_bytes,omitempty"`
+	OffsetBytes int `json:"offset_bytes"`
 	// Maximum bytes to return
-	MaxBytes int `json:"max_bytes,omitempty"`
+	MaxBytes int `json:"max_bytes"`
 }
 
 // ResourceSpecResult is the result type of the argo service GetResourceSpec
@@ -743,11 +743,11 @@ type ResourceSpecResult struct {
 	// Resource name
 	Name string `json:"name"`
 	// Kubernetes namespace; absent for cluster-scoped resources
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Selected spec section
 	Section string `json:"section"`
 	// Selected template name
-	TemplateName *string `json:"template_name,omitempty"`
+	TemplateName *string `json:"template_name,omitzero"`
 	// Canonical JSON for the selected upstream fields
 	SpecJSON string `json:"spec_json"`
 	// Data source; always argo
@@ -758,20 +758,20 @@ type ResourceSpecResult struct {
 // ResubmitWorkflow method.
 type ResubmitWorkflowPayload struct {
 	// Kubernetes namespace; defaults to ARGO_NAMESPACE
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Source workflow name
 	Name string `json:"name"`
 	// Reuse successful outputs; defaults to false
-	Memoized bool `json:"memoized,omitempty"`
+	Memoized bool `json:"memoized"`
 	// Parameter overrides
-	Parameters map[string]string `json:"parameters,omitempty"`
+	Parameters map[string]string `json:"parameters,omitzero"`
 }
 
 // ResumeWorkflowPayload is the payload type of the argo service ResumeWorkflow
 // method.
 type ResumeWorkflowPayload struct {
 	// Kubernetes namespace; defaults to ARGO_NAMESPACE
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Exact workflow name
 	Name string `json:"name"`
 }
@@ -780,15 +780,15 @@ type ResumeWorkflowPayload struct {
 // method.
 type RetryWorkflowPayload struct {
 	// Kubernetes namespace; defaults to the server's ARGO_NAMESPACE
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Exact workflow name
 	Name string `json:"name"`
 	// Also restart successful steps; defaults to false
-	RestartSuccessful *bool `json:"restart_successful,omitempty"`
+	RestartSuccessful *bool `json:"restart_successful,omitzero"`
 	// Preview mode; defaults to true and does not call Argo
-	DryRun *bool `json:"dry_run,omitempty"`
+	DryRun *bool `json:"dry_run,omitzero"`
 	// Single-use token returned by a matching dry-run preview
-	ConfirmationToken *string `json:"confirmation_token,omitempty"`
+	ConfirmationToken *string `json:"confirmation_token,omitzero"`
 }
 
 // ServerContextResult is the result type of the argo service GetServerContext
@@ -819,7 +819,7 @@ type ServerContextResult struct {
 	// Argo context status
 	ArgoStatus string `json:"argo_status"`
 	// Upstream Argo version
-	ArgoVersion *string `json:"argo_version,omitempty"`
+	ArgoVersion *string `json:"argo_version,omitzero"`
 	// Namespace policy and upstream-status context
 	Note string `json:"note"`
 }
@@ -828,20 +828,20 @@ type ServerContextResult struct {
 // SubmitWorkflowTemplate method.
 type SubmitWorkflowTemplatePayload struct {
 	// Kubernetes namespace; defaults to ARGO_NAMESPACE
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Source template name
 	TemplateName string `json:"template_name"`
 	// Submit a ClusterWorkflowTemplate; defaults to false
-	ClusterScope bool `json:"cluster_scope,omitempty"`
+	ClusterScope bool `json:"cluster_scope"`
 	// Parameter overrides
-	Parameters map[string]string `json:"parameters,omitempty"`
+	Parameters map[string]string `json:"parameters,omitzero"`
 }
 
 // SuspendWorkflowPayload is the payload type of the argo service
 // SuspendWorkflow method.
 type SuspendWorkflowPayload struct {
 	// Kubernetes namespace; defaults to ARGO_NAMESPACE
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Exact workflow name
 	Name string `json:"name"`
 }
@@ -850,31 +850,31 @@ type TemplateSummary struct {
 	// WorkflowTemplate name
 	Name string `json:"name"`
 	// Kubernetes namespace
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Default template entrypoint
-	Entrypoint *string `json:"entrypoint,omitempty"`
+	Entrypoint *string `json:"entrypoint,omitzero"`
 }
 
 // TerminateWorkflowPayload is the payload type of the argo service
 // TerminateWorkflow method.
 type TerminateWorkflowPayload struct {
 	// Kubernetes namespace; defaults to the server's ARGO_NAMESPACE
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Exact workflow name
 	Name string `json:"name"`
 	// Operator-visible reason for termination and part of confirmation scope
 	Reason string `json:"reason"`
 	// Preview mode; defaults to true and does not call Argo
-	DryRun *bool `json:"dry_run,omitempty"`
+	DryRun *bool `json:"dry_run,omitzero"`
 	// Single-use token returned by a matching dry-run preview
-	ConfirmationToken *string `json:"confirmation_token,omitempty"`
+	ConfirmationToken *string `json:"confirmation_token,omitzero"`
 }
 
 // ToggleCronSuspensionPayload is the payload type of the argo service
 // ToggleCronSuspension method.
 type ToggleCronSuspensionPayload struct {
 	// Kubernetes namespace; defaults to the server's ARGO_NAMESPACE
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Exact CronWorkflow name
 	Name string `json:"name"`
 	// True to suspend scheduling; false to resume scheduling
@@ -885,24 +885,24 @@ type ToggleCronSuspensionPayload struct {
 // TriggerCronWorkflow method.
 type TriggerCronWorkflowPayload struct {
 	// Kubernetes namespace; defaults to ARGO_NAMESPACE
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// CronWorkflow name
 	Name string `json:"name"`
 	// Parameter overrides
-	Parameters map[string]string `json:"parameters,omitempty"`
+	Parameters map[string]string `json:"parameters,omitzero"`
 }
 
 // WaitWorkflowPayload is the payload type of the argo service WaitWorkflow
 // method.
 type WaitWorkflowPayload struct {
 	// Kubernetes namespace; defaults to ARGO_NAMESPACE
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Exact workflow name
 	Name string `json:"name"`
 	// Maximum wait duration
-	DurationSeconds int `json:"duration_seconds,omitempty"`
+	DurationSeconds int `json:"duration_seconds"`
 	// Polling interval
-	PollIntervalSeconds int `json:"poll_interval_seconds,omitempty"`
+	PollIntervalSeconds int `json:"poll_interval_seconds"`
 }
 
 // WaitWorkflowResult is the result type of the argo service WaitWorkflow
@@ -926,11 +926,11 @@ type WorkflowArtifactSummary struct {
 	// inputs or outputs
 	Direction string `json:"direction"`
 	// Container artifact path
-	Path *string `json:"path,omitempty"`
+	Path *string `json:"path,omitzero"`
 	// Whether the artifact is optional
 	Optional bool `json:"optional"`
 	// Safe Argo artifact download URL
-	DownloadURL *string `json:"download_url,omitempty"`
+	DownloadURL *string `json:"download_url,omitzero"`
 }
 
 // WorkflowArtifactsResult is the result type of the argo service
@@ -943,13 +943,13 @@ type WorkflowArtifactsResult struct {
 	// Artifacts returned
 	Count int `json:"count"`
 	// Offset for the next page; absent when exhausted
-	NextOffset *int `json:"next_offset,omitempty"`
+	NextOffset *int `json:"next_offset,omitzero"`
 	// Whether another page exists or fields/links were shortened
 	Truncated bool `json:"truncated"`
 	// Whether displayed fields were shortened or a link was omitted
 	FieldsTruncated bool `json:"fields_truncated"`
 	// Truncation or paging note
-	Note *string `json:"note,omitempty"`
+	Note *string `json:"note,omitzero"`
 }
 
 // WorkflowDetailResult is the result type of the argo service GetWorkflow
@@ -962,40 +962,40 @@ type WorkflowDetailResult struct {
 	// Current workflow phase
 	Status string `json:"status"`
 	// Completed nodes over total nodes
-	Progress *string `json:"progress,omitempty"`
+	Progress *string `json:"progress,omitzero"`
 	// RFC3339 start timestamp
-	StartedAt *string `json:"started_at,omitempty"`
+	StartedAt *string `json:"started_at,omitzero"`
 	// RFC3339 finish timestamp
-	FinishedAt *string `json:"finished_at,omitempty"`
+	FinishedAt *string `json:"finished_at,omitzero"`
 	// Elapsed workflow duration
-	Duration *string `json:"duration,omitempty"`
+	Duration *string `json:"duration,omitzero"`
 	// Status message reported by Argo
-	Message *string `json:"message,omitempty"`
+	Message *string `json:"message,omitzero"`
 	// Workflow labels
-	Labels map[string]string `json:"labels,omitempty"`
+	Labels map[string]string `json:"labels,omitzero"`
 	// Workflow annotations
-	Annotations map[string]string `json:"annotations,omitempty"`
+	Annotations map[string]string `json:"annotations,omitzero"`
 	// Workflow input parameters
-	Parameters map[string]string `json:"parameters,omitempty"`
+	Parameters map[string]string `json:"parameters,omitzero"`
 	// Workflow output parameters
-	Outputs map[string]string `json:"outputs,omitempty"`
+	Outputs map[string]string `json:"outputs,omitzero"`
 }
 
 type WorkflowEventSummary struct {
 	// Event type
 	Type string `json:"type"`
 	// Event reason
-	Reason *string `json:"reason,omitempty"`
+	Reason *string `json:"reason,omitzero"`
 	// Diagnostic message, truncated to 4 KiB
-	Message *string `json:"message,omitempty"`
+	Message *string `json:"message,omitzero"`
 	// Occurrence count
 	Count int `json:"count"`
 	// First observation timestamp
-	FirstTimestamp *string `json:"first_timestamp,omitempty"`
+	FirstTimestamp *string `json:"first_timestamp,omitzero"`
 	// Last observation timestamp
-	LastTimestamp *string `json:"last_timestamp,omitempty"`
+	LastTimestamp *string `json:"last_timestamp,omitzero"`
 	// Event timestamp
-	EventTime *string `json:"event_time,omitempty"`
+	EventTime *string `json:"event_time,omitzero"`
 }
 
 // WorkflowEventsResult is the result type of the argo service
@@ -1021,7 +1021,7 @@ type WorkflowLogsResult struct {
 	// Workflow name
 	Workflow string `json:"workflow"`
 	// Pod filter, when provided
-	Pod *string `json:"pod,omitempty"`
+	Pod *string `json:"pod,omitzero"`
 	// Container name
 	Container string `json:"container"`
 	// Log entries returned by Argo before local filtering
@@ -1031,11 +1031,11 @@ type WorkflowLogsResult struct {
 	// Entries included in logs
 	ReturnedLines int `json:"returned_lines"`
 	// Case-insensitive local search term
-	SearchTerm *string `json:"search_term,omitempty"`
+	SearchTerm *string `json:"search_term,omitzero"`
 	// Maximum matching entries returned; omitted when unlimited
-	MaxLines *int `json:"max_lines,omitempty"`
+	MaxLines *int `json:"max_lines,omitzero"`
 	// Explanation of empty or truncated results
-	Note *string `json:"note,omitempty"`
+	Note *string `json:"note,omitzero"`
 	// Rendered log entries; empty when no entries match
 	Logs string `json:"logs"`
 	// Log source: live or archive
@@ -1050,31 +1050,31 @@ type WorkflowNodeSummary struct {
 	// Node name
 	Name string `json:"name"`
 	// Human-readable node name
-	DisplayName *string `json:"display_name,omitempty"`
+	DisplayName *string `json:"display_name,omitzero"`
 	// Node type
 	Type string `json:"type"`
 	// Node phase
-	Phase *string `json:"phase,omitempty"`
+	Phase *string `json:"phase,omitzero"`
 	// Template name
-	TemplateName *string `json:"template_name,omitempty"`
+	TemplateName *string `json:"template_name,omitzero"`
 	// Template boundary node ID
-	BoundaryID *string `json:"boundary_id,omitempty"`
+	BoundaryID *string `json:"boundary_id,omitzero"`
 	// Child node IDs; links may point outside the current page
 	Children []string `json:"children"`
 	// RFC3339 start timestamp
-	StartedAt *string `json:"started_at,omitempty"`
+	StartedAt *string `json:"started_at,omitzero"`
 	// RFC3339 finish timestamp
-	FinishedAt *string `json:"finished_at,omitempty"`
+	FinishedAt *string `json:"finished_at,omitzero"`
 	// Diagnostic message, truncated to 4 KiB
-	Message *string `json:"message,omitempty"`
+	Message *string `json:"message,omitzero"`
 	// Node input parameters
-	InputParameters map[string]string `json:"input_parameters,omitempty"`
+	InputParameters map[string]string `json:"input_parameters,omitzero"`
 	// Node output parameters
-	OutputParameters map[string]string `json:"output_parameters,omitempty"`
+	OutputParameters map[string]string `json:"output_parameters,omitzero"`
 	// Node output result, truncated to 16 KiB
-	OutputResult *string `json:"output_result,omitempty"`
+	OutputResult *string `json:"output_result,omitzero"`
 	// Node exit code
-	ExitCode *string `json:"exit_code,omitempty"`
+	ExitCode *string `json:"exit_code,omitzero"`
 }
 
 // WorkflowNodesResult is the result type of the argo service GetWorkflowNodes
@@ -1087,13 +1087,13 @@ type WorkflowNodesResult struct {
 	// Nodes returned
 	Count int `json:"count"`
 	// Offset for the next page; absent when exhausted
-	NextOffset *int `json:"next_offset,omitempty"`
+	NextOffset *int `json:"next_offset,omitzero"`
 	// Whether another page exists or fields were shortened
 	Truncated bool `json:"truncated"`
 	// Whether any displayed field or child list was shortened
 	FieldsTruncated bool `json:"fields_truncated"`
 	// Truncation or paging note
-	Note *string `json:"note,omitempty"`
+	Note *string `json:"note,omitzero"`
 }
 
 type WorkflowPodDiagnostic struct {
@@ -1118,7 +1118,7 @@ type WorkflowPodDiagnostic struct {
 	// Whether any pod field was shortened
 	Truncated bool `json:"truncated"`
 	// Safe per-pod event retrieval error
-	EventsError *string `json:"events_error,omitempty"`
+	EventsError *string `json:"events_error,omitzero"`
 }
 
 // WorkflowPodDiagnosticsResult is the result type of the argo service
@@ -1133,7 +1133,7 @@ type WorkflowPodDiagnosticsResult struct {
 	// Pods returned
 	Count int `json:"count"`
 	// Opaque continuation token
-	Continue *string `json:"continue,omitempty"`
+	Continue *string `json:"continue,omitzero"`
 	// Whether another Kubernetes page exists
 	HasMore bool `json:"has_more"`
 	// Whether output fields were shortened
@@ -1151,13 +1151,13 @@ type WorkflowSummary struct {
 	// Workflow phase or status
 	Status string `json:"status"`
 	// Completed nodes over total nodes
-	Progress *string `json:"progress,omitempty"`
+	Progress *string `json:"progress,omitzero"`
 	// RFC3339 start timestamp
-	StartedAt *string `json:"started_at,omitempty"`
+	StartedAt *string `json:"started_at,omitzero"`
 	// RFC3339 finish timestamp
-	FinishedAt *string `json:"finished_at,omitempty"`
+	FinishedAt *string `json:"finished_at,omitzero"`
 	// Elapsed workflow duration
-	Duration *string `json:"duration,omitempty"`
+	Duration *string `json:"duration,omitzero"`
 }
 
 // WorkflowTemplateDetailResult is the result type of the argo service
@@ -1166,11 +1166,11 @@ type WorkflowTemplateDetailResult struct {
 	// WorkflowTemplate name
 	Name string `json:"name"`
 	// Kubernetes namespace
-	Namespace *string `json:"namespace,omitempty"`
+	Namespace *string `json:"namespace,omitzero"`
 	// Default template entrypoint
-	Entrypoint *string `json:"entrypoint,omitempty"`
+	Entrypoint *string `json:"entrypoint,omitzero"`
 	// Template definitions available in this resource
-	TemplateNames []string `json:"template_names,omitempty"`
+	TemplateNames []string `json:"template_names,omitzero"`
 	// Data source; always argo for live results
 	Source string `json:"source"`
 }

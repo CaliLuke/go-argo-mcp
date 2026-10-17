@@ -39,13 +39,13 @@ type ContentItem struct {
 	// Content type
 	Type string `json:"type"`
 	// Text content
-	Text *string `json:"text,omitempty"`
+	Text *string `json:"text,omitzero"`
 	// Base64 encoded data
-	Data *string `json:"data,omitempty"`
+	Data *string `json:"data,omitzero"`
 	// MIME type
-	MimeType *string `json:"mimeType,omitempty"`
+	MimeType *string `json:"mimeType,omitzero"`
 	// Resource URI
-	URI *string `json:"uri,omitempty"`
+	URI *string `json:"uri,omitzero"`
 	// Content metadata
 	Meta loom.JSONValue `json:"_meta,omitzero"`
 }
@@ -66,5 +66,5 @@ type ToolsCallResult struct {
 	// Optional structured result for machine consumers
 	StructuredContent loom.JSONValue `json:"structuredContent,omitzero"`
 	// Whether the tool encountered an error
-	IsError *bool `json:"isError,omitempty"`
+	IsError *bool `json:"isError,omitzero"`
 }

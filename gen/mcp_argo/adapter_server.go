@@ -21,6 +21,7 @@ import (
 	"time"
 
 	argo "github.com/CaliLuke/go-argo-mcp/gen/argo"
+	agentruntime "github.com/CaliLuke/loom-mcp/v2/runtime/agent/runtime"
 	mcpruntime "github.com/CaliLuke/loom-mcp/v2/runtime/mcp"
 	sdkbridge "github.com/CaliLuke/loom-mcp/v2/runtime/mcp/sdkbridge"
 	loom "github.com/CaliLuke/loom/pkg"
@@ -2142,6 +2143,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"properties\":{\"continue\":{\"type\":\"string\",\"description\":\"Opaque continuation token returned by a previous call; replay with the same filters and limit\"},\"limit\":{\"type\":\"integer\",\"description\":\"Maximum number of workflows to return; defaults to 50 when omitted\",\"default\":50,\"minimum\":1,\"maximum\":200},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace to query; defaults to the server's ARGO_NAMESPACE\"},\"status\":{\"type\":\"string\",\"description\":\"Optional workflow status filter\",\"enum\":[\"Running\",\"Succeeded\",\"Failed\",\"Pending\",\"Error\"]}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", listWorkflowsInputRecovery(err, arguments)))
 		}
+		if err := agentruntime.RecordToolPayload(ctx, payload); err != nil {
+			return false, err
+		}
 		result, err := a.service.ListWorkflows(ctx, payload)
 		if err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, err)
@@ -2176,6 +2180,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		}
 		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Exact workflow name; use list_workflows to discover names\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowInputRecovery(err, arguments)))
+		}
+		if err := agentruntime.RecordToolPayload(ctx, payload); err != nil {
+			return false, err
 		}
 		result, err := a.service.GetWorkflow(ctx, payload)
 		if err != nil {
@@ -2231,6 +2238,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"workflow_name\"],\"properties\":{\"archive_uid\":{\"type\":\"string\",\"description\":\"Archive UID\"},\"container\":{\"type\":\"string\",\"description\":\"Container name; defaults to main\",\"default\":\"main\"},\"max_bytes\":{\"type\":\"integer\",\"description\":\"Maximum collected bytes; defaults to 1 MiB\",\"default\":1048576,\"minimum\":1024,\"maximum\":4194304},\"max_lines\":{\"type\":\"integer\",\"description\":\"Maximum lines to return; zero returns all lines\",\"default\":200,\"minimum\":0,\"maximum\":9223372036854775807},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"},\"node_id\":{\"type\":\"string\",\"description\":\"Exact archived node ID\"},\"pod_name\":{\"type\":\"string\",\"description\":\"Optional exact pod name; omit to collect logs across workflow pods\"},\"search\":{\"type\":\"string\",\"description\":\"Optional case-insensitive search across log text and pod names\"},\"source\":{\"type\":\"string\",\"description\":\"Log source\",\"enum\":[\"auto\",\"live\",\"archive\"],\"default\":\"auto\"},\"workflow_name\":{\"type\":\"string\",\"description\":\"Exact workflow name; use list_workflows to discover names\"}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowLogsInputRecovery(err, arguments)))
 		}
+		if err := agentruntime.RecordToolPayload(ctx, payload); err != nil {
+			return false, err
+		}
 		result, err := a.service.GetWorkflowLogs(ctx, payload)
 		if err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, err)
@@ -2269,6 +2279,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"name\",\"reason\"],\"properties\":{\"confirmation_token\":{\"type\":\"string\",\"description\":\"Single-use token returned by a matching dry-run preview\"},\"dry_run\":{\"type\":\"boolean\",\"description\":\"Preview mode; defaults to true and does not call Argo\"},\"name\":{\"type\":\"string\",\"description\":\"Exact workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"},\"reason\":{\"type\":\"string\",\"description\":\"Operator-visible reason for termination and part of confirmation scope\"}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", terminateWorkflowInputRecovery(err, arguments)))
 		}
+		if err := agentruntime.RecordToolPayload(ctx, payload); err != nil {
+			return false, err
+		}
 		result, err := a.service.TerminateWorkflow(ctx, payload)
 		if err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, err)
@@ -2303,6 +2316,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		}
 		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"confirmation_token\":{\"type\":\"string\",\"description\":\"Single-use token returned by a matching dry-run preview\"},\"dry_run\":{\"type\":\"boolean\",\"description\":\"Preview mode; defaults to true and does not call Argo\"},\"name\":{\"type\":\"string\",\"description\":\"Exact workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"},\"restart_successful\":{\"type\":\"boolean\",\"description\":\"Also restart successful steps; defaults to false\"}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", retryWorkflowInputRecovery(err, arguments)))
+		}
+		if err := agentruntime.RecordToolPayload(ctx, payload); err != nil {
+			return false, err
 		}
 		result, err := a.service.RetryWorkflow(ctx, payload)
 		if err != nil {
@@ -2339,6 +2355,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"properties\":{\"continue\":{\"type\":\"string\",\"description\":\"Opaque continuation token returned by a previous call; replay with the same filters and limit\"},\"limit\":{\"type\":\"integer\",\"description\":\"Maximum number of CronWorkflows to return; defaults to 50 when omitted\",\"default\":50,\"minimum\":1,\"maximum\":200},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"},\"suspended\":{\"type\":\"boolean\",\"description\":\"Optional suspension-state filter\"}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", listCronWorkflowsInputRecovery(err, arguments)))
 		}
+		if err := agentruntime.RecordToolPayload(ctx, payload); err != nil {
+			return false, err
+		}
 		result, err := a.service.ListCronWorkflows(ctx, payload)
 		if err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, err)
@@ -2373,6 +2392,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		}
 		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Exact CronWorkflow name; use list_cron_workflows to discover names\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getCronWorkflowInputRecovery(err, arguments)))
+		}
+		if err := agentruntime.RecordToolPayload(ctx, payload); err != nil {
+			return false, err
 		}
 		result, err := a.service.GetCronWorkflow(ctx, payload)
 		if err != nil {
@@ -2414,6 +2436,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"continue\":{\"type\":\"string\",\"description\":\"Opaque continuation token returned by a previous call; replay with the same limit\"},\"limit\":{\"type\":\"integer\",\"description\":\"Maximum history entries to return; defaults to 10 when omitted\",\"default\":10,\"minimum\":1,\"maximum\":200},\"name\":{\"type\":\"string\",\"description\":\"Exact CronWorkflow name; use list_cron_workflows to discover names\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getCronHistoryInputRecovery(err, arguments)))
 		}
+		if err := agentruntime.RecordToolPayload(ctx, payload); err != nil {
+			return false, err
+		}
 		result, err := a.service.GetCronHistory(ctx, payload)
 		if err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, err)
@@ -2452,6 +2477,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"name\",\"suspend\"],\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Exact CronWorkflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"},\"suspend\":{\"type\":\"boolean\",\"description\":\"True to suspend scheduling; false to resume scheduling\"}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", toggleCronSuspensionInputRecovery(err, arguments)))
 		}
+		if err := agentruntime.RecordToolPayload(ctx, payload); err != nil {
+			return false, err
+		}
 		result, err := a.service.ToggleCronSuspension(ctx, payload)
 		if err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, err)
@@ -2486,6 +2514,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		}
 		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"properties\":{\"continue\":{\"type\":\"string\",\"description\":\"Opaque continuation token returned by a previous call; replay with the same filters and limit\"},\"label_selector\":{\"type\":\"string\",\"description\":\"Optional Kubernetes label selector\"},\"limit\":{\"type\":\"integer\",\"description\":\"Maximum number of WorkflowTemplates to return; defaults to 50 when omitted\",\"default\":50,\"minimum\":1,\"maximum\":200},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", listWorkflowTemplatesInputRecovery(err, arguments)))
+		}
+		if err := agentruntime.RecordToolPayload(ctx, payload); err != nil {
+			return false, err
 		}
 		result, err := a.service.ListWorkflowTemplates(ctx, payload)
 		if err != nil {
@@ -2522,6 +2553,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Exact WorkflowTemplate name; use list_workflow_templates to discover names\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to the server's ARGO_NAMESPACE\"}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowTemplateInputRecovery(err, arguments)))
 		}
+		if err := agentruntime.RecordToolPayload(ctx, payload); err != nil {
+			return false, err
+		}
 		result, err := a.service.GetWorkflowTemplate(ctx, payload)
 		if err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, err)
@@ -2557,6 +2591,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"properties\":{\"continue\":{\"type\":\"string\",\"description\":\"Opaque continuation token returned by a previous call; replay with the same filters and limit\"},\"label_selector\":{\"type\":\"string\",\"description\":\"Optional Kubernetes label selector\"},\"limit\":{\"type\":\"integer\",\"description\":\"Maximum number of ClusterWorkflowTemplates to return; defaults to 50 when omitted\",\"default\":50,\"minimum\":1,\"maximum\":200}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", listClusterWorkflowTemplatesInputRecovery(err, arguments)))
 		}
+		if err := agentruntime.RecordToolPayload(ctx, payload); err != nil {
+			return false, err
+		}
 		result, err := a.service.ListClusterWorkflowTemplates(ctx, payload)
 		if err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, err)
@@ -2591,6 +2628,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		}
 		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Exact ClusterWorkflowTemplate name; use list_cluster_workflow_templates to discover names\"}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getClusterWorkflowTemplateInputRecovery(err, arguments)))
+		}
+		if err := agentruntime.RecordToolPayload(ctx, payload); err != nil {
+			return false, err
 		}
 		result, err := a.service.GetClusterWorkflowTemplate(ctx, payload)
 		if err != nil {
@@ -2635,6 +2675,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"archive_uid\":{\"type\":\"string\",\"description\":\"Archive UID; omit for live workflow data\"},\"limit\":{\"type\":\"integer\",\"description\":\"Maximum nodes; defaults to 50\",\"default\":50,\"minimum\":1,\"maximum\":200},\"name\":{\"type\":\"string\",\"description\":\"Exact workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to ARGO_NAMESPACE\"},\"node_id\":{\"type\":\"string\",\"description\":\"Optional exact node ID\"},\"offset\":{\"type\":\"integer\",\"description\":\"Zero-based offset\",\"default\":0,\"minimum\":0,\"maximum\":9223372036854775807},\"phase\":{\"type\":\"string\",\"description\":\"Optional exact node phase\"}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowNodesInputRecovery(err, arguments)))
 		}
+		if err := agentruntime.RecordToolPayload(ctx, payload); err != nil {
+			return false, err
+		}
 		result, err := a.service.GetWorkflowNodes(ctx, payload)
 		if err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, err)
@@ -2678,6 +2721,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"duration_seconds\":{\"type\":\"integer\",\"description\":\"Observation duration in seconds; defaults to 2\",\"default\":2,\"minimum\":1,\"maximum\":10},\"limit\":{\"type\":\"integer\",\"description\":\"Maximum observed events; defaults to 50\",\"default\":50,\"minimum\":1,\"maximum\":200},\"name\":{\"type\":\"string\",\"description\":\"Exact workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to ARGO_NAMESPACE\"}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowEventsInputRecovery(err, arguments)))
 		}
+		if err := agentruntime.RecordToolPayload(ctx, payload); err != nil {
+			return false, err
+		}
 		result, err := a.service.GetWorkflowEvents(ctx, payload)
 		if err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, err)
@@ -2713,6 +2759,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"properties\":{\"continue\":{\"type\":\"string\",\"description\":\"Opaque continuation token\"},\"label_selector\":{\"type\":\"string\",\"description\":\"Optional Kubernetes label selector\"},\"limit\":{\"type\":\"integer\",\"description\":\"Maximum archived workflows; defaults to 50\",\"default\":50,\"minimum\":1,\"maximum\":200},\"name_prefix\":{\"type\":\"string\",\"description\":\"Optional workflow name prefix\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to ARGO_NAMESPACE\"}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", listArchivedWorkflowsInputRecovery(err, arguments)))
 		}
+		if err := agentruntime.RecordToolPayload(ctx, payload); err != nil {
+			return false, err
+		}
 		result, err := a.service.ListArchivedWorkflows(ctx, payload)
 		if err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, err)
@@ -2747,6 +2796,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		}
 		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"uid\"],\"properties\":{\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to ARGO_NAMESPACE\"},\"uid\":{\"type\":\"string\",\"description\":\"Archive UID\"}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getArchivedWorkflowInputRecovery(err, arguments)))
+		}
+		if err := agentruntime.RecordToolPayload(ctx, payload); err != nil {
+			return false, err
 		}
 		result, err := a.service.GetArchivedWorkflow(ctx, payload)
 		if err != nil {
@@ -2790,6 +2842,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		}
 		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"archive_uid\":{\"type\":\"string\",\"description\":\"Archive UID; omit for live workflow data\"},\"limit\":{\"type\":\"integer\",\"description\":\"Maximum artifacts; defaults to 50\",\"default\":50,\"minimum\":1,\"maximum\":200},\"name\":{\"type\":\"string\",\"description\":\"Exact workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to ARGO_NAMESPACE\"},\"node_id\":{\"type\":\"string\",\"description\":\"Optional exact node ID\"},\"offset\":{\"type\":\"integer\",\"description\":\"Zero-based offset\",\"default\":0,\"minimum\":0,\"maximum\":9223372036854775807}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowArtifactsInputRecovery(err, arguments)))
+		}
+		if err := agentruntime.RecordToolPayload(ctx, payload); err != nil {
+			return false, err
 		}
 		result, err := a.service.GetWorkflowArtifacts(ctx, payload)
 		if err != nil {
@@ -2848,6 +2903,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"name\",\"node_id\",\"artifact_name\"],\"properties\":{\"archive_uid\":{\"type\":\"string\",\"description\":\"Archive UID; omit for live workflow data\"},\"artifact_name\":{\"type\":\"string\",\"description\":\"Exact declared artifact name\"},\"direction\":{\"type\":\"string\",\"description\":\"Artifact direction\",\"enum\":[\"inputs\",\"outputs\"],\"default\":\"outputs\"},\"max_bytes\":{\"type\":\"integer\",\"description\":\"Maximum bytes to return\",\"default\":65536,\"minimum\":4,\"maximum\":262144},\"name\":{\"type\":\"string\",\"description\":\"Exact workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to ARGO_NAMESPACE\"},\"node_id\":{\"type\":\"string\",\"description\":\"Exact workflow node ID\"},\"offset_bytes\":{\"type\":\"integer\",\"description\":\"Byte offset\",\"default\":0,\"minimum\":0,\"maximum\":16777216}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", readWorkflowArtifactInputRecovery(err, arguments)))
 		}
+		if err := agentruntime.RecordToolPayload(ctx, payload); err != nil {
+			return false, err
+		}
 		result, err := a.service.ReadWorkflowArtifact(ctx, payload)
 		if err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, err)
@@ -2902,6 +2960,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"kind\",\"name\"],\"properties\":{\"kind\":{\"type\":\"string\",\"description\":\"Resource kind\",\"enum\":[\"workflow\",\"workflow_template\",\"cluster_workflow_template\",\"cron_workflow\"]},\"max_bytes\":{\"type\":\"integer\",\"description\":\"Maximum serialized JSON bytes\",\"default\":65536,\"minimum\":1024,\"maximum\":262144},\"name\":{\"type\":\"string\",\"description\":\"Exact resource name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; forbidden for cluster scope\"},\"section\":{\"type\":\"string\",\"description\":\"Spec section\",\"enum\":[\"summary\",\"arguments\",\"templates\",\"spec\"],\"default\":\"summary\"},\"template_name\":{\"type\":\"string\",\"description\":\"Exact template name; valid only for templates\"}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getResourceSpecInputRecovery(err, arguments)))
 		}
+		if err := agentruntime.RecordToolPayload(ctx, payload); err != nil {
+			return false, err
+		}
 		result, err := a.service.GetResourceSpec(ctx, payload)
 		if err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, err)
@@ -2941,6 +3002,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		}
 		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"continue\":{\"type\":\"string\",\"description\":\"Opaque Kubernetes continuation token\"},\"limit\":{\"type\":\"integer\",\"description\":\"Maximum pods\",\"default\":20,\"minimum\":1,\"maximum\":50},\"name\":{\"type\":\"string\",\"description\":\"Exact workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to ARGO_NAMESPACE\"},\"pod_name\":{\"type\":\"string\",\"description\":\"Optional exact pod name\"}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", getWorkflowPodDiagnosticsInputRecovery(err, arguments)))
+		}
+		if err := agentruntime.RecordToolPayload(ctx, payload); err != nil {
+			return false, err
 		}
 		result, err := a.service.GetWorkflowPodDiagnostics(ctx, payload)
 		if err != nil {
@@ -2985,6 +3049,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"duration_seconds\":{\"type\":\"integer\",\"description\":\"Maximum wait duration\",\"default\":10,\"minimum\":1,\"maximum\":30},\"name\":{\"type\":\"string\",\"description\":\"Exact workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to ARGO_NAMESPACE\"},\"poll_interval_seconds\":{\"type\":\"integer\",\"description\":\"Polling interval\",\"default\":2,\"minimum\":1,\"maximum\":5}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", waitWorkflowInputRecovery(err, arguments)))
 		}
+		if err := agentruntime.RecordToolPayload(ctx, payload); err != nil {
+			return false, err
+		}
 		result, err := a.service.WaitWorkflow(ctx, payload)
 		if err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, err)
@@ -3004,6 +3071,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		})
 		return false, stream.SendAndClose(ctx, final)
 	case "get_server_context":
+		if err := agentruntime.RecordToolPayload(ctx, nil); err != nil {
+			return false, err
+		}
 		result, err := a.service.GetServerContext(ctx)
 		if err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, err)
@@ -3038,6 +3108,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		}
 		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"manifest_json\"],\"properties\":{\"manifest_json\":{\"type\":\"string\",\"description\":\"Complete Workflow JSON object, maximum 256 KiB\",\"maxLength\":262144},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to ARGO_NAMESPACE\"}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", lintWorkflowInputRecovery(err, arguments)))
+		}
+		if err := agentruntime.RecordToolPayload(ctx, payload); err != nil {
+			return false, err
 		}
 		result, err := a.service.LintWorkflow(ctx, payload)
 		if err != nil {
@@ -3079,6 +3152,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"manifest_json\"],\"properties\":{\"cluster_scope\":{\"type\":\"boolean\",\"description\":\"Validate a ClusterWorkflowTemplate; defaults to false\",\"default\":false},\"manifest_json\":{\"type\":\"string\",\"description\":\"Complete template JSON object, maximum 256 KiB\",\"maxLength\":262144},\"namespace\":{\"type\":\"string\",\"description\":\"Optional for namespaced templates and defaults to ARGO_NAMESPACE; forbidden for cluster scope\"}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", lintWorkflowTemplateInputRecovery(err, arguments)))
 		}
+		if err := agentruntime.RecordToolPayload(ctx, payload); err != nil {
+			return false, err
+		}
 		result, err := a.service.LintWorkflowTemplate(ctx, payload)
 		if err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, err)
@@ -3119,6 +3195,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"template_name\"],\"properties\":{\"cluster_scope\":{\"type\":\"boolean\",\"description\":\"Submit a ClusterWorkflowTemplate; defaults to false\",\"default\":false},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to ARGO_NAMESPACE\"},\"parameters\":{\"type\":\"object\",\"description\":\"Parameter overrides\",\"additionalProperties\":{\"type\":\"string\"}},\"template_name\":{\"type\":\"string\",\"description\":\"Source template name\"}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", submitWorkflowTemplateInputRecovery(err, arguments)))
 		}
+		if err := agentruntime.RecordToolPayload(ctx, payload); err != nil {
+			return false, err
+		}
 		result, err := a.service.SubmitWorkflowTemplate(ctx, payload)
 		if err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, err)
@@ -3154,6 +3233,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Exact workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to ARGO_NAMESPACE\"}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", suspendWorkflowInputRecovery(err, arguments)))
 		}
+		if err := agentruntime.RecordToolPayload(ctx, payload); err != nil {
+			return false, err
+		}
 		result, err := a.service.SuspendWorkflow(ctx, payload)
 		if err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, err)
@@ -3188,6 +3270,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		}
 		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Exact workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to ARGO_NAMESPACE\"}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", resumeWorkflowInputRecovery(err, arguments)))
+		}
+		if err := agentruntime.RecordToolPayload(ctx, payload); err != nil {
+			return false, err
 		}
 		result, err := a.service.ResumeWorkflow(ctx, payload)
 		if err != nil {
@@ -3229,6 +3314,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"memoized\":{\"type\":\"boolean\",\"description\":\"Reuse successful outputs; defaults to false\",\"default\":false},\"name\":{\"type\":\"string\",\"description\":\"Source workflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to ARGO_NAMESPACE\"},\"parameters\":{\"type\":\"object\",\"description\":\"Parameter overrides\",\"additionalProperties\":{\"type\":\"string\"}}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", resubmitWorkflowInputRecovery(err, arguments)))
 		}
+		if err := agentruntime.RecordToolPayload(ctx, payload); err != nil {
+			return false, err
+		}
 		result, err := a.service.ResubmitWorkflow(ctx, payload)
 		if err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, err)
@@ -3263,6 +3351,9 @@ func (a *MCPAdapter) executeRealTool(ctx context.Context, p *ToolsCallPayload, s
 		}
 		if err := sdkbridge.ValidateToolArguments(arguments, "{\"type\":\"object\",\"required\":[\"name\"],\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"CronWorkflow name\"},\"namespace\":{\"type\":\"string\",\"description\":\"Kubernetes namespace; defaults to ARGO_NAMESPACE\"},\"parameters\":{\"type\":\"object\",\"description\":\"Parameter overrides\",\"additionalProperties\":{\"type\":\"string\"}}},\"additionalProperties\":false}"); err != nil {
 			return true, a.sendToolError(ctx, stream, p.Name, toolCallError(err, "invalid_params", triggerCronWorkflowInputRecovery(err, arguments)))
+		}
+		if err := agentruntime.RecordToolPayload(ctx, payload); err != nil {
+			return false, err
 		}
 		result, err := a.service.TriggerCronWorkflow(ctx, payload)
 		if err != nil {

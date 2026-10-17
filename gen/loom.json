@@ -1,4 +1,5 @@
 {
-  "loom_version": "v1.9.0",
-  "design_digest": "b84b87ec56c2d4c20b7ed7af806bb3f8cae337ba2aa109036e8aed01841632b7"
+  "loom_version": "v1.10.0-alpha.10",
+  "design_package": "github.com/CaliLuke/go-argo-mcp/design",
+  "design_digest": "748e8f2409532cd78a4cff076be024d891b9b3f962f5cb52c9a93988fd8fcc2f"
 }
